@@ -20,48 +20,80 @@ export default async (req, context) => {
     }
 
     try {
-        // Parse the FormData from the request
-        const formData = await req.formData();
-        const file = formData.get('file');
+        // Get content type to determine how to parse the body
+        const contentType = req.headers.get('Content-Type') || '';
 
-        if (!file) {
-            return new Response(JSON.stringify({ error: 'No file provided' }), {
+        let fileBuffer;
+        let fileContentType = 'application/octet-stream';
+
+        if (contentType.includes('multipart/form-data')) {
+            // Parse FormData
+            const formData = await req.formData();
+            const file = formData.get('file');
+
+            if (!file) {
+                return new Response(JSON.stringify({ error: 'No file provided in form data' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            // Get file data
+            fileBuffer = await file.arrayBuffer();
+            fileContentType = file.type || 'application/octet-stream';
+        } else {
+            // Direct binary upload
+            fileBuffer = await req.arrayBuffer();
+            fileContentType = contentType || 'application/octet-stream';
+        }
+
+        if (!fileBuffer || fileBuffer.byteLength === 0) {
+            return new Response(JSON.stringify({ error: 'Empty file' }), {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        // Get file data as ArrayBuffer
-        const fileBuffer = await file.arrayBuffer();
-        const contentType = file.type || 'application/octet-stream';
+        console.log('Uploading file to HeyGen, size:', fileBuffer.byteLength, 'type:', fileContentType);
 
         // Upload to HeyGen
         const heygenResponse = await fetch('https://api.heygen.com/v2/photo/upload', {
             method: 'POST',
             headers: {
                 'X-Api-Key': apiKey,
-                'Content-Type': contentType,
+                'Content-Type': fileContentType,
             },
             body: fileBuffer,
         });
 
-        const responseData = await heygenResponse.json();
+        const responseText = await heygenResponse.text();
+        console.log('HeyGen response:', heygenResponse.status, responseText);
 
-        if (!heygenResponse.ok) {
-            return new Response(JSON.stringify(responseData), {
-                status: heygenResponse.status,
+        let responseData;
+        try {
+            responseData = JSON.parse(responseText);
+        } catch (e) {
+            return new Response(JSON.stringify({
+                error: 'Invalid response from HeyGen',
+                details: responseText.substring(0, 200)
+            }), {
+                status: 502,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
         return new Response(JSON.stringify(responseData), {
-            status: 200,
+            status: heygenResponse.status,
             headers: { 'Content-Type': 'application/json' },
         });
     } catch (error) {
         console.error('Upload proxy error:', error);
         return new Response(
-            JSON.stringify({ error: 'Upload failed', message: error.message }),
+            JSON.stringify({
+                error: 'Upload failed',
+                message: error.message,
+                stack: error.stack
+            }),
             {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },

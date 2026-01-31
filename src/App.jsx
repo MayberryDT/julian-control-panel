@@ -5,7 +5,7 @@ import { CheckCircle, Loader2, Upload, Video } from 'lucide-react';
 const HEYGEN_API_URL = 'https://api.heygen.com/v2/video/av4/generate';
 const UPLOAD_PROXY_URL = '/api/upload';
 const NOVA_LOGO = 'https://i.imgur.com/rMYsQbN.jpeg';
-const VERSION = 'v1.2.3';
+const VERSION = 'v1.2.4';
 
 function App() {
     // State
@@ -47,24 +47,33 @@ function App() {
         setStatusMessage('Uploading via secure proxy...');
 
         try {
-            // Use FormData for reliable file upload
+            // Create fresh FormData with the file
             const formData = new FormData();
-            formData.append('file', file);
+            // Create a new Blob from the file to ensure fresh reference
+            const fileBlob = new Blob([await file.arrayBuffer()], { type: file.type });
+            formData.append('file', fileBlob, file.name);
 
-            const response = await axios.post(UPLOAD_PROXY_URL, formData, {
+            // Use native fetch instead of axios
+            const response = await fetch(UPLOAD_PROXY_URL, {
+                method: 'POST',
                 headers: {
                     'X-Api-Key': apiKey,
                 },
+                body: formData,
             });
 
-            const key = response.data.data.image_key || response.data.data.id;
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || errorData.error || 'Upload failed');
+            }
+
+            const data = await response.json();
+            const key = data.data.image_key || data.data.id;
             setImageKey(key);
             setStatusMessage('Photo uploaded successfully! Image Key: ' + key);
         } catch (error) {
             console.error('Upload failed:', error);
-            setStatusMessage(
-                'Upload failed: ' + (error.response?.data?.message || error.message)
-            );
+            setStatusMessage('Upload failed: ' + error.message);
         } finally {
             setIsUploading(false);
         }
@@ -87,12 +96,21 @@ function App() {
         }
     };
 
-    const handleDrop = (e) => {
+    const handleDrop = async (e) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragActive(false);
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            handleFileUpload(e.dataTransfer.files[0]);
+            const droppedFile = e.dataTransfer.files[0];
+            // Immediately read the file data to prevent stale reference
+            try {
+                const arrayBuffer = await droppedFile.arrayBuffer();
+                const freshFile = new File([arrayBuffer], droppedFile.name, { type: droppedFile.type });
+                handleFileUpload(freshFile);
+            } catch (err) {
+                console.error('Error reading dropped file:', err);
+                setStatusMessage('Error reading file: ' + err.message);
+            }
         }
     };
 
