@@ -9,11 +9,7 @@
   targetPort = 5173
   publish = "dist"
 
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
+# SPA fallback - serves index.html for all non-file routes
 [[redirects]]
   from = "/*"
   to = "/index.html"
