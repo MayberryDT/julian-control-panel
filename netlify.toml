@@ -9,7 +9,14 @@
   targetPort = 5173
   publish = "dist"
 
+# API routes go to functions - this must come BEFORE the SPA fallback
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
 # SPA fallback - serves index.html for all non-file routes
+# Only applies after API routes are handled
 [[redirects]]
   from = "/*"
   to = "/index.html"

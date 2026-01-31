@@ -5,7 +5,7 @@ import { CheckCircle, Loader2, Upload, Video } from 'lucide-react';
 const HEYGEN_API_URL = 'https://api.heygen.com/v2/video/av4/generate';
 const UPLOAD_PROXY_URL = '/api/upload';
 const NOVA_LOGO = 'https://i.imgur.com/rMYsQbN.jpeg';
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.2.3';
 
 function App() {
     // State
