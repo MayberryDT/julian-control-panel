@@ -4,8 +4,9 @@ import { CheckCircle, Loader2, Upload, Video } from 'lucide-react';
 
 const HEYGEN_API_URL = 'https://api.heygen.com/v2/video/av4/generate';
 const UPLOAD_PROXY_URL = '/api/upload';
+const VOICES_PROXY_URL = '/.netlify/functions/voices';
 const NOVA_LOGO = 'https://i.imgur.com/rMYsQbN.jpeg';
-const VERSION = 'v1.2.8';
+const VERSION = 'v1.3.0';
 
 function App() {
     // State
@@ -16,6 +17,8 @@ function App() {
     const [isUploading, setIsUploading] = useState(false);
     const [apiKey, setApiKey] = useState('');
     const [voiceId, setVoiceId] = useState('d2499bfa8e0d471d8a623377958f75f0');
+    const [voices, setVoices] = useState([]);
+    const [isFetchingVoices, setIsFetchingVoices] = useState(false);
     const [speed, setSpeed] = useState(1.25);
     const [motionPrompt, setMotionPrompt] = useState(
         'Man talking on a podcast directly to the viewer holding steady eye contact with the camera.'
@@ -27,8 +30,39 @@ function App() {
         const savedKey = localStorage.getItem('HEYGEN_API_KEY');
         if (savedKey) {
             setApiKey(savedKey);
+            fetchVoices(savedKey);
         }
     }, []);
+
+    // Fetch voices from HeyGen
+    const fetchVoices = async (key = apiKey) => {
+        if (!key) return;
+
+        setIsFetchingVoices(true);
+        try {
+            const response = await fetch(VOICES_PROXY_URL, {
+                headers: { 'X-Api-Key': key }
+            });
+            if (!response.ok) throw new Error('Failed to fetch voices');
+            const data = await response.json();
+
+            // HeyGen v2 voices returns { data: { voices: [...] } }
+            const voiceList = data.data?.voices || [];
+
+            // Sort voices: My voices first, then by name
+            const sortedVoices = voiceList.sort((a, b) => {
+                if (a.type === 'custom' && b.type !== 'custom') return -1;
+                if (a.type !== 'custom' && b.type === 'custom') return 1;
+                return a.name.localeCompare(b.name);
+            });
+
+            setVoices(sortedVoices);
+        } catch (error) {
+            console.error('Error fetching voices:', error);
+        } finally {
+            setIsFetchingVoices(false);
+        }
+    };
 
     // Save API key to localStorage
     const handleApiKeyChange = (value) => {
@@ -286,15 +320,58 @@ function App() {
 
                     {/* Calibration - Voice ID & Speed */}
                     <div style={styles.inputGroup}>
-                        <label style={styles.label}>Calibration</label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <label style={styles.label}>Calibration</label>
+                            <button
+                                onClick={() => fetchVoices()}
+                                disabled={isFetchingVoices || !apiKey}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#38bdf8',
+                                    fontSize: '11px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '5px'
+                                }}
+                            >
+                                {isFetchingVoices ? <Loader2 size={12} className="animate-spin" /> : null}
+                                Refresh Voices
+                            </button>
+                        </div>
                         <div style={styles.calibrationRow}>
                             <div style={styles.calibrationItem}>
                                 <span style={styles.smallLabel}>Voice ID</span>
-                                <input
-                                    value={voiceId}
-                                    onChange={(e) => setVoiceId(e.target.value)}
-                                    style={{ ...styles.input, fontSize: '12px' }}
-                                />
+                                {voices.length > 0 ? (
+                                    <select
+                                        value={voiceId}
+                                        onChange={(e) => setVoiceId(e.target.value)}
+                                        style={{ ...styles.input, fontSize: '12px', appearance: 'none' }}
+                                    >
+                                        <optgroup label="My Voices">
+                                            {voices.filter(v => v.type === 'custom').map(voice => (
+                                                <option key={voice.voice_id} value={voice.voice_id}>
+                                                    {voice.name}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                        <optgroup label="System Voices">
+                                            {voices.filter(v => v.type !== 'custom').map(voice => (
+                                                <option key={voice.voice_id} value={voice.voice_id}>
+                                                    {voice.name} ({voice.language})
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                    </select>
+                                ) : (
+                                    <input
+                                        value={voiceId}
+                                        onChange={(e) => setVoiceId(e.target.value)}
+                                        placeholder="Enter Voice ID"
+                                        style={{ ...styles.input, fontSize: '12px' }}
+                                    />
+                                )}
                             </div>
                             <div style={{ ...styles.calibrationItem, width: '80px' }}>
                                 <span style={styles.smallLabel}>Speed</span>
