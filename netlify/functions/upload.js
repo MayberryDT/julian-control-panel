@@ -20,9 +20,20 @@ export default async (req, context) => {
     }
 
     try {
-        // Get the file content from the request body
-        const fileBuffer = await req.arrayBuffer();
-        const contentType = req.headers.get('Content-Type') || 'application/octet-stream';
+        // Parse the FormData from the request
+        const formData = await req.formData();
+        const file = formData.get('file');
+
+        if (!file) {
+            return new Response(JSON.stringify({ error: 'No file provided' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        // Get file data as ArrayBuffer
+        const fileBuffer = await file.arrayBuffer();
+        const contentType = file.type || 'application/octet-stream';
 
         // Upload to HeyGen
         const heygenResponse = await fetch('https://api.heygen.com/v2/photo/upload', {

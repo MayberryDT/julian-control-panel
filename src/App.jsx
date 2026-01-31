@@ -47,27 +47,13 @@ function App() {
         setStatusMessage('Uploading via secure proxy...');
 
         try {
-            // Determine content type
-            let contentType = file.type || 'application/octet-stream';
-            const ext = file.name.split('.').pop().toLowerCase();
+            // Use FormData for reliable file upload
+            const formData = new FormData();
+            formData.append('file', file);
 
-            if (ext === 'jpg' || ext === 'jpeg') {
-                contentType = 'image/jpeg';
-            } else if (ext === 'png') {
-                contentType = 'image/png';
-            } else if (ext === 'gif') {
-                contentType = 'image/gif';
-            } else if (ext === 'webp') {
-                contentType = 'image/webp';
-            }
-
-            // Read file as ArrayBuffer
-            const arrayBuffer = await file.arrayBuffer();
-
-            const response = await axios.post(UPLOAD_PROXY_URL, arrayBuffer, {
+            const response = await axios.post(UPLOAD_PROXY_URL, formData, {
                 headers: {
                     'X-Api-Key': apiKey,
-                    'Content-Type': contentType,
                 },
             });
 
