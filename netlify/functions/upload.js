@@ -24,7 +24,7 @@ export default async (req, context) => {
         const contentType = req.headers.get('Content-Type') || '';
 
         let fileBuffer;
-        let fileContentType = 'application/octet-stream';
+        let fileContentType = 'image/jpeg';  // Default for photos
 
         if (contentType.includes('multipart/form-data')) {
             // Parse FormData
@@ -38,13 +38,13 @@ export default async (req, context) => {
                 });
             }
 
-            // Get file data
+            // Get file data as ArrayBuffer
             fileBuffer = await file.arrayBuffer();
-            fileContentType = file.type || 'application/octet-stream';
+            fileContentType = file.type || 'image/jpeg';
         } else {
             // Direct binary upload
             fileBuffer = await req.arrayBuffer();
-            fileContentType = contentType || 'application/octet-stream';
+            fileContentType = contentType || 'image/jpeg';
         }
 
         if (!fileBuffer || fileBuffer.byteLength === 0) {
@@ -56,8 +56,8 @@ export default async (req, context) => {
 
         console.log('Uploading file to HeyGen, size:', fileBuffer.byteLength, 'type:', fileContentType);
 
-        // Upload to HeyGen
-        const heygenResponse = await fetch('https://api.heygen.com/v2/photo/upload', {
+        // Upload to HeyGen - CORRECT endpoint: upload.heygen.com/v1/asset
+        const heygenResponse = await fetch('https://upload.heygen.com/v1/asset', {
             method: 'POST',
             headers: {
                 'X-Api-Key': apiKey,
@@ -67,15 +67,18 @@ export default async (req, context) => {
         });
 
         const responseText = await heygenResponse.text();
-        console.log('HeyGen response:', heygenResponse.status, responseText);
+        console.log('HeyGen response status:', heygenResponse.status);
+        console.log('HeyGen response body:', responseText.substring(0, 500));
 
         let responseData;
         try {
             responseData = JSON.parse(responseText);
         } catch (e) {
+            // If HeyGen returns HTML error page, return the details
             return new Response(JSON.stringify({
                 error: 'Invalid response from HeyGen',
-                details: responseText.substring(0, 200)
+                details: responseText.substring(0, 500),
+                status: heygenResponse.status
             }), {
                 status: 502,
                 headers: { 'Content-Type': 'application/json' },
@@ -91,8 +94,7 @@ export default async (req, context) => {
         return new Response(
             JSON.stringify({
                 error: 'Upload failed',
-                message: error.message,
-                stack: error.stack
+                message: error.message
             }),
             {
                 status: 500,

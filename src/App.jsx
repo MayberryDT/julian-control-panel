@@ -5,7 +5,7 @@ import { CheckCircle, Loader2, Upload, Video } from 'lucide-react';
 const HEYGEN_API_URL = 'https://api.heygen.com/v2/video/av4/generate';
 const UPLOAD_PROXY_URL = '/api/upload';
 const NOVA_LOGO = 'https://i.imgur.com/rMYsQbN.jpeg';
-const VERSION = 'v1.2.4';
+const VERSION = 'v1.2.5';
 
 function App() {
     // State
@@ -96,21 +96,24 @@ function App() {
         }
     };
 
-    const handleDrop = async (e) => {
+    const handleDrop = (e) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragActive(false);
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             const droppedFile = e.dataTransfer.files[0];
-            // Immediately read the file data to prevent stale reference
-            try {
-                const arrayBuffer = await droppedFile.arrayBuffer();
+            // Use FileReader which is more compatible for drag/drop
+            const reader = new FileReader();
+            reader.onload = () => {
+                const arrayBuffer = reader.result;
                 const freshFile = new File([arrayBuffer], droppedFile.name, { type: droppedFile.type });
                 handleFileUpload(freshFile);
-            } catch (err) {
+            };
+            reader.onerror = (err) => {
                 console.error('Error reading dropped file:', err);
-                setStatusMessage('Error reading file: ' + err.message);
-            }
+                setStatusMessage('Error reading file. Please try clicking to select instead.');
+            };
+            reader.readAsArrayBuffer(droppedFile);
         }
     };
 
