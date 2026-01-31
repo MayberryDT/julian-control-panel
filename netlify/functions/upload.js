@@ -24,7 +24,7 @@ export default async (req, context) => {
         const contentType = req.headers.get('Content-Type') || '';
 
         let fileBuffer;
-        let fileContentType = 'image/jpeg';  // Default for photos
+        let fileContentType;
 
         if (contentType.includes('multipart/form-data')) {
             // Parse FormData
@@ -40,11 +40,13 @@ export default async (req, context) => {
 
             // Get file data as ArrayBuffer
             fileBuffer = await file.arrayBuffer();
-            fileContentType = file.type || 'image/jpeg';
+            fileContentType = file.type;
+
+            console.log('FormData upload - file.type:', file.type, 'file.name:', file.name);
         } else {
             // Direct binary upload
             fileBuffer = await req.arrayBuffer();
-            fileContentType = contentType || 'image/jpeg';
+            fileContentType = contentType;
         }
 
         if (!fileBuffer || fileBuffer.byteLength === 0) {
@@ -54,7 +56,25 @@ export default async (req, context) => {
             });
         }
 
-        console.log('Uploading file to HeyGen, size:', fileBuffer.byteLength, 'type:', fileContentType);
+        // Detect actual file type from magic bytes if MIME type is missing or generic
+        const uint8 = new Uint8Array(fileBuffer);
+        let detectedType = fileContentType;
+
+        // Check magic bytes
+        if (uint8[0] === 0x89 && uint8[1] === 0x50 && uint8[2] === 0x4E && uint8[3] === 0x47) {
+            detectedType = 'image/png';
+        } else if (uint8[0] === 0xFF && uint8[1] === 0xD8 && uint8[2] === 0xFF) {
+            detectedType = 'image/jpeg';
+        } else if (uint8[0] === 0x47 && uint8[1] === 0x49 && uint8[2] === 0x46) {
+            detectedType = 'image/gif';
+        } else if (uint8[0] === 0x52 && uint8[1] === 0x49 && uint8[2] === 0x46 && uint8[3] === 0x46) {
+            detectedType = 'image/webp';
+        }
+
+        console.log('Original type:', fileContentType, 'Detected type:', detectedType, 'Size:', fileBuffer.byteLength);
+
+        // Use detected type
+        fileContentType = detectedType || 'image/jpeg';
 
         // Upload to HeyGen - CORRECT endpoint: upload.heygen.com/v1/asset
         const heygenResponse = await fetch('https://upload.heygen.com/v1/asset', {
@@ -74,7 +94,6 @@ export default async (req, context) => {
         try {
             responseData = JSON.parse(responseText);
         } catch (e) {
-            // If HeyGen returns HTML error page, return the details
             return new Response(JSON.stringify({
                 error: 'Invalid response from HeyGen',
                 details: responseText.substring(0, 500),
