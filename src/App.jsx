@@ -61,7 +61,10 @@ function App() {
                 contentType = 'image/webp';
             }
 
-            const response = await axios.post(UPLOAD_PROXY_URL, file, {
+            // Read file as ArrayBuffer
+            const arrayBuffer = await file.arrayBuffer();
+
+            const response = await axios.post(UPLOAD_PROXY_URL, arrayBuffer, {
                 headers: {
                     'X-Api-Key': apiKey,
                     'Content-Type': contentType,
