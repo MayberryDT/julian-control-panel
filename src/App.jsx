@@ -5,7 +5,7 @@ import { CheckCircle, Loader2, Upload, Video } from 'lucide-react';
 const HEYGEN_API_URL = 'https://api.heygen.com/v2/video/av4/generate';
 const UPLOAD_PROXY_URL = '/api/upload';
 const NOVA_LOGO = 'https://i.imgur.com/rMYsQbN.jpeg';
-const VERSION = 'v1.2.7';
+const VERSION = 'v1.2.8';
 
 function App() {
     // State
@@ -96,24 +96,58 @@ function App() {
         }
     };
 
-    const handleDrop = (e) => {
+    const handleDrop = async (e) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragActive(false);
 
+        // First, try to get a file from the drop
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             const droppedFile = e.dataTransfer.files[0];
 
             // Check if the file is accessible by checking its size
-            // Files from restricted locations often have size = 0 or throw errors
             if (droppedFile.size > 0) {
-                // File seems valid, try to upload directly
                 handleFileUpload(droppedFile);
-            } else {
-                // File might be from a restricted location
-                setStatusMessage('Cannot read this file. Please click to select the file instead.');
+                return;
             }
         }
+
+        // If no valid file, check for URL (browser download shelf often provides this)
+        const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+
+        if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://'))) {
+            setIsUploading(true);
+            setStatusMessage('Downloading image from URL...');
+
+            try {
+                // For file:// URLs, we can't fetch directly due to security
+                if (url.startsWith('file://')) {
+                    setStatusMessage('Cannot access local files from browser downloads. Please click to select the file instead.');
+                    setIsUploading(false);
+                    return;
+                }
+
+                // Fetch the image from the URL
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch image');
+                }
+
+                const blob = await response.blob();
+                const fileName = url.split('/').pop() || 'downloaded-image.jpg';
+                const file = new File([blob], fileName, { type: blob.type });
+
+                handleFileUpload(file);
+            } catch (err) {
+                console.error('Error fetching dropped URL:', err);
+                setStatusMessage('Could not download image. Please click to select the file instead.');
+                setIsUploading(false);
+            }
+            return;
+        }
+
+        // No valid file or URL found
+        setStatusMessage('Cannot read this file from browser downloads. Please click to select the file instead.');
     };
 
     // Render video
