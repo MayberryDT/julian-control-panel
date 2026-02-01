@@ -1,52 +1,60 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { CheckCircle, Loader2, Upload, Video } from 'lucide-react';
+import { CheckCircle, Loader2, Upload, Video, LogOut, Key } from 'lucide-react';
+import AuthGate from './components/AuthGate';
+import TransparencyLog from './components/TransparencyLog';
+import { keyVault } from './lib/KeyVault';
+import { heyGenClient } from './lib/HeyGenClient';
 
-const HEYGEN_API_URL = 'https://api.heygen.com/v2/video/av4/generate';
-const UPLOAD_PROXY_URL = '/api/upload';
-const VOICES_PROXY_URL = '/.netlify/functions/voices';
 const NOVA_LOGO = 'https://i.imgur.com/rMYsQbN.jpeg';
-const VERSION = 'v1.3.0';
+const VERSION = 'v2.0.0-client';
 
 function App() {
-    // State
+    // Auth State
+    const [isLocked, setIsLocked] = useState(true);
+
+    // App State
     const [script, setScript] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState(null);
     const [imageKey, setImageKey] = useState('');
     const [isUploading, setIsUploading] = useState(false);
-    const [apiKey, setApiKey] = useState('');
     const [voiceId, setVoiceId] = useState('d2499bfa8e0d471d8a623377958f75f0');
     const [voices, setVoices] = useState([]);
     const [isFetchingVoices, setIsFetchingVoices] = useState(false);
-    const [speed, setSpeed] = useState(1.25);
+    const [speed, setSpeed] = useState(1.0);
     const [motionPrompt, setMotionPrompt] = useState(
         'Man talking on a podcast directly to the viewer holding steady eye contact with the camera.'
     );
     const [isDragActive, setIsDragActive] = useState(false);
 
-    // Load API key from localStorage on mount
+    // Initial Check
     useEffect(() => {
-        const savedKey = localStorage.getItem('HEYGEN_API_KEY');
-        if (savedKey) {
-            setApiKey(savedKey);
-            fetchVoices(savedKey);
+        const key = keyVault.getKey();
+        if (key) {
+            setIsLocked(false);
+            fetchVoices();
         }
-    }, []);
+    }, [isLocked]); // Re-run when unlock status changes
 
-    // Fetch voices from HeyGen
-    const fetchVoices = async (key = apiKey) => {
-        if (!key) return;
+    const handleUnlock = () => {
+        setIsLocked(false);
+        fetchVoices();
+    };
 
+    const handleLock = () => {
+        keyVault.clearKey();
+        setIsLocked(true);
+        // Reset sensitive state
+        setVoices([]);
+        setImageKey('');
+        setStatusMessage(null);
+    };
+
+    // Fetch voices
+    const fetchVoices = async () => {
         setIsFetchingVoices(true);
         try {
-            const response = await fetch(VOICES_PROXY_URL, {
-                headers: { 'X-Api-Key': key }
-            });
-            if (!response.ok) throw new Error('Failed to fetch voices');
-            const data = await response.json();
-
-            // HeyGen v2 voices returns { data: { voices: [...] } }
+            const data = await heyGenClient.getVoices();
             const voiceList = data.data?.voices || [];
 
             // Sort voices: My voices first, then by name
@@ -58,56 +66,31 @@ function App() {
 
             setVoices(sortedVoices);
         } catch (error) {
-            console.error('Error fetching voices:', error);
+            // Already logged by client
+            if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                alert('Authentication Failed: Invalid API Key. Please disconnect and try again.');
+                handleLock();
+                return;
+            }
         } finally {
             setIsFetchingVoices(false);
         }
     };
 
-    // Save API key to localStorage
-    const handleApiKeyChange = (value) => {
-        setApiKey(value);
-        localStorage.setItem('HEYGEN_API_KEY', value);
-    };
-
     // Handle file upload
     const handleFileUpload = async (file) => {
-        if (!file || !apiKey) {
-            alert('Please provide an API key first.');
-            return;
-        }
+        if (!file) return;
 
         setIsUploading(true);
-        setStatusMessage('Uploading via secure proxy...');
+        setStatusMessage('Uploading directly to HeyGen...');
 
         try {
-            // Create fresh FormData with the file
-            const formData = new FormData();
-            // Create a new Blob from the file to ensure fresh reference
-            const fileBlob = new Blob([await file.arrayBuffer()], { type: file.type });
-            formData.append('file', fileBlob, file.name);
-
-            // Use native fetch instead of axios
-            const response = await fetch(UPLOAD_PROXY_URL, {
-                method: 'POST',
-                headers: {
-                    'X-Api-Key': apiKey,
-                },
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || errorData.error || 'Upload failed');
-            }
-
-            const data = await response.json();
+            const data = await heyGenClient.uploadAsset(file);
             const key = data.data.image_key || data.data.id;
             setImageKey(key);
-            setStatusMessage('Photo uploaded successfully! Image Key: ' + key);
+            setStatusMessage('Asset Secured. Key: ' + key);
         } catch (error) {
-            console.error('Upload failed:', error);
-            setStatusMessage('Upload failed: ' + error.message);
+            setStatusMessage('Upload failed. See log for details.');
         } finally {
             setIsUploading(false);
         }
@@ -135,69 +118,28 @@ function App() {
         e.stopPropagation();
         setIsDragActive(false);
 
-        // First, try to get a file from the drop
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             const droppedFile = e.dataTransfer.files[0];
-
-            // Check if the file is accessible by checking its size
             if (droppedFile.size > 0) {
                 handleFileUpload(droppedFile);
-                return;
             }
         }
-
-        // If no valid file, check for URL (browser download shelf often provides this)
-        const url = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
-
-        if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://'))) {
-            setIsUploading(true);
-            setStatusMessage('Downloading image from URL...');
-
-            try {
-                // For file:// URLs, we can't fetch directly due to security
-                if (url.startsWith('file://')) {
-                    setStatusMessage('Cannot access local files from browser downloads. Please click to select the file instead.');
-                    setIsUploading(false);
-                    return;
-                }
-
-                // Fetch the image from the URL
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error('Failed to fetch image');
-                }
-
-                const blob = await response.blob();
-                const fileName = url.split('/').pop() || 'downloaded-image.jpg';
-                const file = new File([blob], fileName, { type: blob.type });
-
-                handleFileUpload(file);
-            } catch (err) {
-                console.error('Error fetching dropped URL:', err);
-                setStatusMessage('Could not download image. Please click to select the file instead.');
-                setIsUploading(false);
-            }
-            return;
-        }
-
-        // No valid file or URL found
-        setStatusMessage('Cannot read this file from browser downloads. Please click to select the file instead.');
     };
 
     // Render video
     const handleRender = async () => {
-        if (!script || !imageKey || !apiKey) {
-            alert('Missing Script, Photo, or API Key.');
+        if (!script || !imageKey) {
+            alert('Missing Script or Photo.');
             return;
         }
 
         setIsLoading(true);
-        setStatusMessage('Sending render request to HeyGen Avatar IV...');
+        setStatusMessage('Initiating Render Sequence...');
 
         try {
             const payload = {
                 image_key: imageKey,
-                video_title: `Julian - ${new Date().toLocaleTimeString()}`,
+                video_title: `Julian Control Panel - ${new Date().toLocaleTimeString()}`,
                 script: script,
                 voice_id: voiceId,
                 voice_settings: {
@@ -210,27 +152,21 @@ function App() {
                 enhance_custom_motion_prompt: true,
             };
 
-            const response = await axios.post(HEYGEN_API_URL, payload, {
-                headers: {
-                    'X-Api-Key': apiKey,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            const videoId = response.data.data.video_id;
+            const data = await heyGenClient.generateVideo(payload);
+            const videoId = data.data.video_id;
             setStatusMessage(
-                `✅ Render started! Video ID: ${videoId}. Check your HeyGen dashboard.`
+                `✅ Render started! Video ID: ${videoId}`
             );
         } catch (error) {
-            console.error('Render failed:', error.response?.data || error.message);
-            setStatusMessage(
-                'Render Error: ' +
-                (error.response?.data?.error?.message || error.message)
-            );
+            setStatusMessage('Render Failed. See Transparency Log.');
         } finally {
             setIsLoading(false);
         }
     };
+
+    if (isLocked) {
+        return <AuthGate onUnlock={handleUnlock} />;
+    }
 
     return (
         <div style={styles.container}>
@@ -239,11 +175,14 @@ function App() {
                 <div style={styles.headerContent}>
                     <img src={NOVA_LOGO} alt="Nova Logo" style={styles.logo} />
                     <h1 style={styles.title}>
-                        Julian <span style={styles.titleAccent}>Control Panel</span>
+                        HeyGen API <span style={styles.titleAccent}>Control Panel</span>
                     </h1>
                 </div>
                 <div style={styles.subtitle}>
-                    <CheckCircle size={14} /> Nova Certified Operator Protocol
+                    System Active
+                    <button onClick={handleLock} style={styles.logoutBtn} title="Lock & Clear Key">
+                        <LogOut size={14} />
+                    </button>
                 </div>
             </header>
 
@@ -251,16 +190,29 @@ function App() {
             <div style={styles.mainGrid}>
                 {/* Left Panel - Settings */}
                 <section style={styles.settingsPanel}>
-                    {/* API Key */}
+                    {/* Key Status */}
                     <div style={styles.inputGroup}>
-                        <label style={styles.label}>Authentication</label>
-                        <input
-                            type="password"
-                            value={apiKey}
-                            onChange={(e) => handleApiKeyChange(e.target.value)}
-                            placeholder="HeyGen API Key"
-                            style={styles.input}
-                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={styles.label}>Active Credentials</label>
+                            <button onClick={handleLock} style={{ ...styles.refreshBtn, color: '#ef4444' }}>
+                                Disconnect
+                            </button>
+                        </div>
+                        <div style={{
+                            fontSize: '11px',
+                            color: '#94a3b8',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            backgroundColor: '#18181b',
+                            padding: '10px',
+                            borderRadius: '8px',
+                            border: '1px solid #27272a'
+                        }}>
+                            <Key size={14} color="#38bdf8" />
+                            <span style={{ flex: 1, fontFamily: 'monospace' }}>••••••••••••••••••••••••</span>
+                            <span style={{ color: '#22c55e', fontSize: '10px', fontWeight: 'bold' }}>ACTIVE</span>
+                        </div>
                     </div>
 
                     {/* Photo Upload */}
@@ -305,15 +257,11 @@ function App() {
                                     style={{
                                         fontSize: '13px',
                                         color: imageKey ? '#38bdf8' : '#f8fafc',
+                                        marginTop: '10px'
                                     }}
                                 >
-                                    {imageKey ? 'Asset Locked' : 'Drop Julian Photo'}
+                                    {imageKey ? 'Asset Secured' : 'Drop Parameter Photo'}
                                 </div>
-                                {imageKey && (
-                                    <div style={{ fontSize: '10px', color: '#52525b' }}>
-                                        {imageKey.substring(0, 20)}...
-                                    </div>
-                                )}
                             </label>
                         </div>
                     </div>
@@ -321,60 +269,40 @@ function App() {
                     {/* Calibration - Voice ID & Speed */}
                     <div style={styles.inputGroup}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <label style={styles.label}>Calibration</label>
+                            <label style={styles.label}>Voice Calibration</label>
                             <button
                                 onClick={() => fetchVoices()}
-                                disabled={isFetchingVoices || !apiKey}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: '#38bdf8',
-                                    fontSize: '11px',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '5px'
-                                }}
+                                disabled={isFetchingVoices}
+                                style={styles.refreshBtn}
                             >
-                                {isFetchingVoices ? <Loader2 size={12} className="animate-spin" /> : null}
-                                Refresh Voices
+                                {isFetchingVoices ? <Loader2 size={12} className="animate-spin" /> : 'Sync'}
                             </button>
                         </div>
                         <div style={styles.calibrationRow}>
                             <div style={styles.calibrationItem}>
-                                <span style={styles.smallLabel}>Voice ID</span>
-                                {voices.length > 0 ? (
-                                    <select
-                                        value={voiceId}
-                                        onChange={(e) => setVoiceId(e.target.value)}
-                                        style={{ ...styles.input, fontSize: '12px', appearance: 'none' }}
-                                    >
-                                        <optgroup label="My Voices">
-                                            {voices.filter(v => v.type === 'custom').map(voice => (
-                                                <option key={voice.voice_id} value={voice.voice_id}>
-                                                    {voice.name}
-                                                </option>
-                                            ))}
-                                        </optgroup>
-                                        <optgroup label="System Voices">
-                                            {voices.filter(v => v.type !== 'custom').map(voice => (
-                                                <option key={voice.voice_id} value={voice.voice_id}>
-                                                    {voice.name} ({voice.language})
-                                                </option>
-                                            ))}
-                                        </optgroup>
-                                    </select>
-                                ) : (
-                                    <input
-                                        value={voiceId}
-                                        onChange={(e) => setVoiceId(e.target.value)}
-                                        placeholder="Enter Voice ID"
-                                        style={{ ...styles.input, fontSize: '12px' }}
-                                    />
-                                )}
+                                <select
+                                    value={voiceId}
+                                    onChange={(e) => setVoiceId(e.target.value)}
+                                    style={{ ...styles.input, fontSize: '12px' }}
+                                >
+                                    {voices.length === 0 && <option>Loading voices...</option>}
+                                    <optgroup label="My Voices">
+                                        {voices.filter(v => v.type === 'custom').map(voice => (
+                                            <option key={voice.voice_id} value={voice.voice_id}>
+                                                {voice.name}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                    <optgroup label="System Voices">
+                                        {voices.filter(v => v.type !== 'custom').map(voice => (
+                                            <option key={voice.voice_id} value={voice.voice_id}>
+                                                {voice.name} ({voice.language})
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                </select>
                             </div>
-                            <div style={{ ...styles.calibrationItem, width: '80px' }}>
-                                <span style={styles.smallLabel}>Speed</span>
+                            <div style={{ ...styles.calibrationItem, width: '80px', flex: '0 0 80px' }}>
                                 <input
                                     type="number"
                                     step="0.05"
@@ -401,13 +329,13 @@ function App() {
                 {/* Right Panel - Script & Render */}
                 <section style={styles.scriptPanel}>
                     <div style={styles.scriptHeader}>
-                        <label style={styles.label}>Clean Script</label>
-                        <span style={styles.charCount}>{script.length} characters</span>
+                        <label style={styles.label}>Sequence Script</label>
+                        <span style={styles.charCount}>{script.length} chars</span>
                     </div>
                     <textarea
                         value={script}
                         onChange={(e) => setScript(e.target.value)}
-                        placeholder="Paste the 'Final Script' from Notion here..."
+                        placeholder="Enter the generation script..."
                         style={styles.scriptTextarea}
                     />
 
@@ -428,41 +356,28 @@ function App() {
                         ) : (
                             <Video size={20} />
                         )}
-                        {isLoading ? 'Executing...' : 'Initiate Render Sequence'}
+                        {isLoading ? 'Processing...' : 'Generate Sequence'}
                     </button>
                 </section>
             </div>
 
-            {/* Status Message */}
+            {/* Status Feedback */}
             {statusMessage && (
-                <div
-                    style={{
-                        ...styles.statusMessage,
-                        backgroundColor:
-                            statusMessage.includes('Error') || statusMessage.includes('failed')
-                                ? 'rgba(239, 68, 68, 0.05)'
-                                : 'rgba(56, 189, 248, 0.05)',
-                        borderColor:
-                            statusMessage.includes('Error') || statusMessage.includes('failed')
-                                ? '#ef4444'
-                                : '#38bdf8',
-                        color:
-                            statusMessage.includes('Error') || statusMessage.includes('failed')
-                                ? '#ef4444'
-                                : '#38bdf8',
-                    }}
-                >
+                <div style={{
+                    ...styles.statusMessage,
+                    color: statusMessage.includes('Failed') ? '#ef4444' : '#38bdf8',
+                    borderColor: statusMessage.includes('Failed') ? '#ef4444' : '#38bdf8'
+                }}>
                     {statusMessage}
                 </div>
             )}
 
-            {/* Footer */}
-            <footer style={styles.footer}>
-                <img src={NOVA_LOGO} alt="Nova Logo" style={styles.footerLogo} />
-                <div style={styles.footerText}>
-                    NOVA // 🌘 // BOUND OPERATOR // SYSTEMS NOMINAL // {VERSION}
-                </div>
-            </footer>
+            {/* Footer Transparency Log - Fixed at bottom */}
+            <div style={styles.footerLog}>
+                <TransparencyLog />
+            </div>
+
+            <div style={{ height: '200px' }}></div>
         </div>
     );
 }
@@ -471,36 +386,37 @@ function App() {
 const styles = {
     container: {
         padding: '20px',
-        maxWidth: '900px',
+        maxWidth: '1000px',
         margin: '0 auto',
         fontFamily: 'Inter, sans-serif',
         backgroundColor: '#09090b',
         color: '#f8fafc',
         minHeight: '100vh',
+        position: 'relative'
     },
     header: {
         marginBottom: '30px',
         textAlign: 'center',
         borderBottom: '1px solid #1e293b',
         paddingBottom: '20px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
     },
     headerContent: {
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
         gap: '15px',
-        marginBottom: '10px',
     },
     logo: {
-        width: '60px',
-        height: '60px',
-        borderRadius: '12px',
+        width: '40px',
+        height: '40px',
+        borderRadius: '8px',
         border: '1px solid #38bdf8',
     },
     title: {
-        fontSize: '28px',
+        fontSize: '24px',
         fontWeight: '800',
-        letterSpacing: '-0.5px',
         color: '#f8fafc',
         margin: 0,
     },
@@ -510,16 +426,24 @@ const styles = {
     subtitle: {
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: '6px',
+        gap: '10px',
         color: '#64748b',
         fontSize: '11px',
         textTransform: 'uppercase',
-        letterSpacing: '1px',
+    },
+    logoutBtn: {
+        background: 'none',
+        border: '1px solid #27272a',
+        padding: '8px',
+        borderRadius: '6px',
+        color: '#ef4444',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center'
     },
     mainGrid: {
         display: 'grid',
-        gridTemplateColumns: '350px 1fr',
+        gridTemplateColumns: '300px 1fr',
         gap: '24px',
     },
     settingsPanel: {
@@ -527,7 +451,7 @@ const styles = {
         flexDirection: 'column',
         gap: '20px',
         backgroundColor: '#111114',
-        padding: '24px',
+        padding: '20px',
         borderRadius: '16px',
         border: '1px solid #1e1e24',
     },
@@ -541,16 +465,16 @@ const styles = {
         fontWeight: '700',
         color: '#52525b',
         textTransform: 'uppercase',
-        letterSpacing: '0.5px',
     },
-    smallLabel: {
+    refreshBtn: {
+        background: 'none',
+        border: 'none',
+        color: '#38bdf8',
         fontSize: '10px',
-        color: '#52525b',
-        marginBottom: '4px',
-        display: 'block',
+        cursor: 'pointer',
     },
     input: {
-        padding: '12px',
+        padding: '10px',
         borderRadius: '8px',
         border: '1px solid #27272a',
         backgroundColor: '#09090b',
@@ -562,16 +486,12 @@ const styles = {
     hiddenInput: {
         display: 'none',
     },
-    dropzoneWrapper: {
-        position: 'relative',
-    },
     dropzone: {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '10px',
-        padding: '40px 20px',
+        padding: '30px 10px',
         borderRadius: '8px',
         cursor: 'pointer',
         transition: 'all 0.2s',
@@ -585,12 +505,12 @@ const styles = {
         flex: 1,
     },
     motionTextarea: {
-        padding: '12px',
+        padding: '10px',
         borderRadius: '8px',
         border: '1px solid #27272a',
         backgroundColor: '#09090b',
         color: 'white',
-        fontSize: '12px',
+        fontSize: '11px',
         lineHeight: '1.5',
         resize: 'vertical',
         outline: 'none',
@@ -598,7 +518,7 @@ const styles = {
     scriptPanel: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '20px',
+        gap: '15px',
     },
     scriptHeader: {
         display: 'flex',
@@ -611,23 +531,23 @@ const styles = {
     },
     scriptTextarea: {
         flex: 1,
-        padding: '24px',
+        padding: '20px',
         borderRadius: '16px',
         border: '1px solid #1e1e24',
         backgroundColor: '#111114',
         color: 'white',
-        fontSize: '16px',
+        fontSize: '15px',
         resize: 'none',
-        lineHeight: '1.7',
-        minHeight: '400px',
+        lineHeight: '1.6',
+        minHeight: '350px',
         outline: 'none',
     },
     renderButton: {
-        padding: '20px',
+        padding: '16px',
         borderRadius: '12px',
         border: 'none',
         fontWeight: '800',
-        fontSize: '15px',
+        fontSize: '14px',
         textTransform: 'uppercase',
         letterSpacing: '1px',
         display: 'flex',
@@ -637,35 +557,23 @@ const styles = {
         transition: 'all 0.2s ease',
     },
     statusMessage: {
-        marginTop: '24px',
-        padding: '16px',
+        marginTop: '20px',
+        padding: '14px',
         borderRadius: '12px',
         border: '1px solid',
         fontSize: '13px',
         fontFamily: 'monospace',
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        textAlign: 'center'
     },
-    footer: {
-        marginTop: '40px',
-        textAlign: 'center',
-        borderTop: '1px solid #1e293b',
-        paddingTop: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '10px',
-    },
-    footerLogo: {
-        width: '30px',
-        height: '30px',
-        borderRadius: '6px',
-        opacity: '0.5',
-    },
-    footerText: {
-        fontSize: '10px',
-        color: '#3f3f46',
-        letterSpacing: '2px',
-        fontWeight: '600',
-    },
+    footerLog: {
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 40,
+        boxShadow: '0 -20px 40px rgba(0,0,0,0.5)'
+    }
 };
 
 export default App;

@@ -1,23 +1,13 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  functions = "netlify/functions"
 
-[dev]
-  command = "npm run dev"
-  port = 5173
-  targetPort = 5173
-  publish = "dist"
-
-# API routes go to functions - this must come BEFORE the SPA fallback
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
-# SPA fallback - serves index.html for all non-file routes
-# Only applies after API routes are handled
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Security Headers
+    Content-Security-Policy = "default-src 'self'; connect-src 'self' https://api.heygen.com https://upload.heygen.com https://*.heygen.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; object-src 'none'; upgrade-insecure-requests;"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
