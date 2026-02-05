@@ -16,7 +16,8 @@ function App() {
     const [script, setScript] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState(null);
-    const [imageKey, setImageKey] = useState('');
+    const [imageKey, setImageKey] = useState(''); // Used for V4
+    const [assetId, setAssetId] = useState('');   // Used for V3
     const [isUploading, setIsUploading] = useState(false);
     const [voiceId, setVoiceId] = useState('d2499bfa8e0d471d8a623377958f75f0');
     const [voices, setVoices] = useState([]);
@@ -48,6 +49,7 @@ function App() {
         // Reset sensitive state
         setVoices([]);
         setImageKey('');
+        setAssetId('');
         setStatusMessage(null);
     };
 
@@ -87,9 +89,10 @@ function App() {
 
         try {
             const data = await heyGenClient.uploadAsset(file);
-            const key = data.data.image_key || data.data.id;
-            setImageKey(key);
-            setStatusMessage('Asset Secured. Key: ' + key);
+            const { image_key, id } = data.data;
+            setImageKey(image_key || id);
+            setAssetId(id);
+            setStatusMessage('Asset Secured. ID: ' + id);
         } catch (error) {
             setStatusMessage('Upload failed. See log for details.');
         } finally {
@@ -129,7 +132,7 @@ function App() {
 
     // Render video
     const handleRender = async () => {
-        if (!script || !imageKey) {
+        if (!script || (!imageKey && !assetId)) {
             alert('Missing Script or Photo.');
             return;
         }
@@ -165,7 +168,7 @@ function App() {
                         {
                             character: {
                                 type: 'talking_photo',
-                                talking_photo_id: imageKey,
+                                talking_photo_id: assetId,
                             },
                             voice: {
                                 type: 'text',
@@ -268,17 +271,17 @@ function App() {
                                     ...styles.dropzone,
                                     border: isDragActive
                                         ? '2px solid #38bdf8'
-                                        : imageKey
+                                        : (imageKey || assetId)
                                             ? '2px solid #38bdf8'
                                             : '2px dashed #27272a',
-                                    backgroundColor: imageKey
+                                    backgroundColor: (imageKey || assetId)
                                         ? 'rgba(56, 189, 248, 0.05)'
                                         : '#09090b',
                                 }}
                             >
                                 {isUploading ? (
                                     <Loader2 className="animate-spin" color="#38bdf8" size={28} />
-                                ) : imageKey ? (
+                                ) : (imageKey || assetId) ? (
                                     <CheckCircle size={28} color="#38bdf8" />
                                 ) : (
                                     <Upload size={28} color="#27272a" />
@@ -286,11 +289,11 @@ function App() {
                                 <div
                                     style={{
                                         fontSize: '13px',
-                                        color: imageKey ? '#38bdf8' : '#f8fafc',
+                                        color: (imageKey || assetId) ? '#38bdf8' : '#f8fafc',
                                         marginTop: '10px'
                                     }}
                                 >
-                                    {imageKey ? 'Asset Secured' : 'Drop Parameter Photo'}
+                                    {(imageKey || assetId) ? 'Asset Secured' : 'Drop Parameter Photo'}
                                 </div>
                             </label>
                         </div>
