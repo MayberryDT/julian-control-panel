@@ -97,8 +97,8 @@ function App() {
             const avatarsData = await heyGenClient.getAvatars();
             const topAvatars = avatarsData.data?.avatars || [];
 
-            // DIAGNOSTIC: Log the first 10 names so we can see what the API is handing back
-            console.log('SYNC DIAGNOSTIC: First 10 Names:', topAvatars.slice(0, 10).map(a => a.avatar_name || a.name || 'Untitled'));
+            // PRIORITY TARGET: Julian's provided ID
+            const targetId = '4c38caa16512480abb4536127bd58759';
 
             // 2. Get Avatar Groups
             setStatusMessage('Syncing Custom Folders (Step 2/3)...');
@@ -135,23 +135,30 @@ function App() {
                 }
             }
 
-            // FILTER: We want Julian's assets, not Abigail's 100 outfits.
-            const stockActors = ['Abigail', 'Joshua', 'Flora', 'Grace', 'Anna', 'Zhen', 'Davis'];
+            // FILTER: Burn the stock actors, keep Julian.
+            const genericStock = ['Abigail', 'Joshua', 'Flora', 'Grace', 'Anna', 'Zhen', 'Davis', 'Aditya', 'Alyssa', 'Aria', 'Blake', 'Charles', 'Dorian', 'Edward', 'Elena', 'Ethan'];
 
             const processedTop = topAvatars
                 .filter(a => {
-                    const name = a.avatar_name || a.name || '';
-                    // Rule 1: Always keep anything that looks like the User (Julian)
-                    if (name.includes('Julian')) return true;
-                    // Rule 2: Block stock actors only if they have a video preview (Streaming Avatars)
-                    const isObviousStock = stockActors.some(stock => name.includes(stock)) && a.preview_video_url;
-                    return !isObviousStock;
+                    const name = (a.avatar_name || a.name || '').toLowerCase();
+                    const id = a.avatar_id || a.id;
+
+                    // Rule 1: Always keep the user's specific target ID
+                    if (id === targetId || id?.includes(targetId)) return true;
+                    // Rule 2: Always keep Julian
+                    if (name.includes('julian')) return true;
+                    // Rule 3: Block generic stock names
+                    if (genericStock.some(stock => name.includes(stock.toLowerCase()))) return false;
+                    // Rule 4: Block anything that is clearly a stock video avatar
+                    if (a.preview_video_url && !name.includes('julian')) return false;
+
+                    return true;
                 })
                 .map(a => ({
                     avatar_id: a.avatar_id || a.id,
                     name: a.name || a.avatar_name || 'Talking Photo',
                     preview_image_url: a.preview_image_url || a.image_url,
-                    is_custom: false
+                    is_custom: (a.avatar_id === targetId || (a.name || '').includes('Julian'))
                 }))
                 .filter(a => a.avatar_id && a.preview_image_url);
 
@@ -159,11 +166,11 @@ function App() {
             const combined = [...allLooks, ...processedTop];
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
 
-            // Keep it under control (Max 50 icons)
-            const limited = unique.slice(0, 50);
+            // Sort: Julian/Custom targets first
+            unique.sort((a, b) => (b.is_custom ? 1 : 0) - (a.is_custom ? 1 : 0));
 
-            setLibraryAvatars(limited);
-            setStatusMessage(`Sync Success: Surfaced ${limited.length} Assets`);
+            setLibraryAvatars(unique);
+            setStatusMessage(`Sync Success: Found ${unique.length} Personal Assets`);
         } catch (error) {
             console.error('Handshake failed:', error);
             setStatusMessage('Sync Error: Check Connection');
@@ -559,7 +566,7 @@ function App() {
                             <button onClick={() => setShowLibrary(false)} style={styles.closeBtn}>×</button>
                         </div>
 
-                        <div style={styles.libraryGrid}>
+                        <div style={styles.avatarGrid}>
                             {isFetchingLibrary ? (
                                 <div style={styles.emptyState}>
                                     <Loader2 className="animate-spin" size={32} color="#38bdf8" />
@@ -578,8 +585,8 @@ function App() {
                                         style={styles.avatarCard}
                                         onClick={() => selectFromLibrary(avatar)}
                                     >
-                                        <div style={styles.avatarPreview}>
-                                            <img src={avatar.preview_image_url} alt={avatar.name} style={styles.avatarImg} />
+                                        <div style={styles.avatarImage}>
+                                            <img src={avatar.preview_image_url} alt={avatar.name} style={styles.avatarImage} />
                                         </div>
                                         <div style={styles.avatarInfo}>
                                             <div style={styles.avatarName}>{avatar.name || 'Talking Photo'}</div>
@@ -850,28 +857,26 @@ const styles = {
         cursor: 'pointer',
         lineHeight: 1
     },
-    libraryGrid: {
-        padding: '24px',
+    avatarGrid: {
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-        gap: '20px',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+        gap: '12px',
+        maxHeight: '400px',
         overflowY: 'auto',
-        minHeight: '200px'
+        padding: '10px'
     },
     avatarCard: {
-        backgroundColor: '#18181b',
-        borderRadius: '16px',
-        border: '1px solid #27272a',
+        background: 'rgba(255,255,255,0.05)',
+        borderRadius: '8px',
         overflow: 'hidden',
         cursor: 'pointer',
+        transition: 'all 0.2s',
+        border: '1px solid rgba(255,255,255,0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        aspectRatio: '2/3'
     },
-    avatarPreview: {
-        aspectRatio: '1',
-        overflow: 'hidden',
-        backgroundColor: '#09090b',
-        position: 'relative'
-    },
-    avatarImg: {
+    avatarImage: {
         width: '100%',
         height: '100%',
         objectFit: 'cover'
