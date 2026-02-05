@@ -22,12 +22,12 @@ function App() {
     const [voiceId, setVoiceId] = useState('d2499bfa8e0d471d8a623377958f75f0');
     const [voices, setVoices] = useState([]);
     const [isFetchingVoices, setIsFetchingVoices] = useState(false);
-    const [speed, setSpeed] = useState(1.0);
+    const [speed, setSpeed] = useState(1.1);
     const [motionPrompt, setMotionPrompt] = useState(
         'Man talking on a podcast directly to the viewer holding steady eye contact with the camera.'
     );
     const [isDragActive, setIsDragActive] = useState(false);
-    const [engine, setEngine] = useState('v4');
+    const [engine, setEngine] = useState('v3');
     const [libraryAvatars, setLibraryAvatars] = useState([]);
     const [isFetchingLibrary, setIsFetchingLibrary] = useState(false);
     const [showLibrary, setShowLibrary] = useState(false);
@@ -73,6 +73,13 @@ function App() {
             });
 
             setVoices(sortedVoices);
+
+            // Auto-select Julian Vance voice if found
+            const julianVoice = sortedVoices.find(v => v.name.includes('Julian Vance'));
+            if (julianVoice) {
+                setVoiceId(julianVoice.voice_id);
+                console.log('✅ Auto-selected Julian Vance voice:', julianVoice.name);
+            }
         } catch (error) {
             // Already logged by client
             if (error.message.includes('401') || error.message.includes('Unauthorized')) {
