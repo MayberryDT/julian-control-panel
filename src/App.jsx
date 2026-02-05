@@ -26,6 +26,7 @@ function App() {
         'Man talking on a podcast directly to the viewer holding steady eye contact with the camera.'
     );
     const [isDragActive, setIsDragActive] = useState(false);
+    const [engine, setEngine] = useState('v4');
 
     // Initial Check
     useEffect(() => {
@@ -148,11 +149,15 @@ function App() {
                 video_orientation: 'portrait',
                 fit: 'cover',
                 caption: false,
-                custom_motion_prompt: motionPrompt,
-                enhance_custom_motion_prompt: true,
             };
 
-            const data = await heyGenClient.generateVideo(payload);
+            // V4 Specific Features
+            if (engine === 'v4') {
+                payload.custom_motion_prompt = motionPrompt;
+                payload.enhance_custom_motion_prompt = true;
+            }
+
+            const data = await heyGenClient.generateVideo(payload, engine);
             const videoId = data.data.video_id;
             setStatusMessage(
                 `✅ Render started! Video ID: ${videoId}`
@@ -266,6 +271,35 @@ function App() {
                         </div>
                     </div>
 
+                    {/* Engine Selection */}
+                    <div style={styles.inputGroup}>
+                        <label style={styles.label}>Avatar Engine</label>
+                        <div style={styles.toggleGroup}>
+                            <button
+                                onClick={() => setEngine('v3')}
+                                style={{
+                                    ...styles.toggleBtn,
+                                    backgroundColor: engine === 'v3' ? '#38bdf8' : '#18181b',
+                                    color: engine === 'v3' ? '#000' : '#94a3b8',
+                                    border: engine === 'v3' ? '1px solid #38bdf8' : '1px solid #27272a',
+                                }}
+                            >
+                                Avatar III
+                            </button>
+                            <button
+                                onClick={() => setEngine('v4')}
+                                style={{
+                                    ...styles.toggleBtn,
+                                    backgroundColor: engine === 'v4' ? '#38bdf8' : '#18181b',
+                                    color: engine === 'v4' ? '#000' : '#94a3b8',
+                                    border: engine === 'v4' ? '1px solid #38bdf8' : '1px solid #27272a',
+                                }}
+                            >
+                                Avatar IV
+                            </button>
+                        </div>
+                    </div>
+
                     {/* Calibration - Voice ID & Speed */}
                     <div style={styles.inputGroup}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -315,13 +349,17 @@ function App() {
                     </div>
 
                     {/* Motion Prompt */}
-                    <div style={styles.inputGroup}>
-                        <label style={styles.label}>Motion Prompt</label>
+                    <div style={{ ...styles.inputGroup, opacity: engine === 'v4' ? 1 : 0.4, pointerEvents: engine === 'v4' ? 'auto' : 'none' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={styles.label}>Motion Prompt</label>
+                            {engine === 'v3' && <span style={{ fontSize: '9px', color: '#52525b' }}>(V4 ONLY)</span>}
+                        </div>
                         <textarea
                             rows={3}
                             value={motionPrompt}
                             onChange={(e) => setMotionPrompt(e.target.value)}
                             style={styles.motionTextarea}
+                            placeholder={engine === 'v4' ? "Describe desired motion..." : "Motion prompts not supported in V3"}
                         />
                     </div>
                 </section>
@@ -454,6 +492,24 @@ const styles = {
         padding: '20px',
         borderRadius: '16px',
         border: '1px solid #1e1e24',
+    },
+    toggleGroup: {
+        display: 'flex',
+        gap: '8px',
+        backgroundColor: '#09090b',
+        padding: '4px',
+        borderRadius: '10px',
+        border: '1px solid #27272a',
+    },
+    toggleBtn: {
+        flex: 1,
+        padding: '8px',
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: '700',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+        border: 'none',
     },
     inputGroup: {
         display: 'flex',

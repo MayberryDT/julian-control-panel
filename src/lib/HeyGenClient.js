@@ -92,9 +92,11 @@ export const heyGenClient = {
     /**
      * Generate Video
      * @param {Object} payload 
+     * @param {string} engine - 'v3' or 'v4'
      */
-    async generateVideo(payload) {
-        return this._fetch(`${BASE_URL}/v2/video/av4/generate`, {
+    async generateVideo(payload, engine = 'v4') {
+        const endpoint = engine === 'v4' ? '/v2/video/av4/generate' : '/v2/video/generate';
+        return this._fetch(`${BASE_URL}${endpoint}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
