@@ -97,18 +97,18 @@ function App() {
             const avatarsData = await heyGenClient.getAvatars();
             const topAvatars = avatarsData.data?.avatars || [];
 
-            // PRIORITY TARGET: Julian's provided ID
+            // PRIORITY TARGET
             const targetId = '4c38caa16512480abb4536127bd58759';
+            console.log('SYNC: Checking for ID:', targetId);
 
             // 2. Get Avatar Groups
-            setStatusMessage('Syncing Custom Folders (Step 2/3)...');
+            setStatusMessage('Syncing Groups (Step 2/3)...');
             let groups = [];
             try {
                 const groupsData = await heyGenClient.getAvatarGroups();
                 groups = groupsData.data?.avatar_groups || [];
-            } catch (groupError) {
-                console.warn('Group sync skipped');
-            }
+                console.log('SYNC: Groups Found:', groups.length);
+            } catch (err) { console.warn('Group fail'); }
 
             let allLooks = [];
 
@@ -118,62 +118,57 @@ function App() {
                 for (const group of groups) {
                     const gId = group.avatar_group_id || group.id;
                     const gName = group.avatar_group_name || group.name || 'Group';
-
                     try {
                         const groupDetails = await heyGenClient.getGroupDetails(gId);
                         const looks = groupDetails.data?.avatar_looks || groupDetails.data?.avatars || [];
-
                         allLooks = [...allLooks, ...looks.map(look => ({
                             avatar_id: look.avatar_id || look.id,
                             name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
                             preview_image_url: look.preview_image_url || look.image_url,
-                            is_custom: true
+                            is_target: (look.avatar_id || look.id) === targetId
                         }))];
-                    } catch (err) {
-                        console.warn(`Group ${gId} details failed`);
-                    }
+                    } catch (err) { }
                 }
             }
 
-            // FILTER: Burn the stock actors, keep Julian.
-            const genericStock = ['Abigail', 'Joshua', 'Flora', 'Grace', 'Anna', 'Zhen', 'Davis', 'Aditya', 'Alyssa', 'Aria', 'Blake', 'Charles', 'Dorian', 'Edward', 'Elena', 'Ethan'];
-
+            // PERMISSIVE PROCESSING
             const processedTop = topAvatars
-                .filter(a => {
-                    const name = (a.avatar_name || a.name || '').toLowerCase();
+                .map(a => {
                     const id = a.avatar_id || a.id;
+                    const isTarget = id === targetId || id?.includes(targetId);
+                    if (isTarget) console.log('SYNC: Found Priority Asset!', a);
 
-                    // Rule 1: Always keep the user's specific target ID
-                    if (id === targetId || id?.includes(targetId)) return true;
-                    // Rule 2: Always keep Julian
-                    if (name.includes('julian')) return true;
-                    // Rule 3: Block generic stock names
-                    if (genericStock.some(stock => name.includes(stock.toLowerCase()))) return false;
-                    // Rule 4: Block anything that is clearly a stock video avatar
-                    if (a.preview_video_url && !name.includes('julian')) return false;
-
-                    return true;
+                    return {
+                        avatar_id: id,
+                        name: a.avatar_name || a.name || 'Talking Photo',
+                        preview_image_url: a.preview_image_url || a.image_url,
+                        is_target: isTarget,
+                        is_stock: (a.preview_video_url || a.gender) && !isTarget
+                    };
                 })
-                .map(a => ({
-                    avatar_id: a.avatar_id || a.id,
-                    name: a.name || a.avatar_name || 'Talking Photo',
-                    preview_image_url: a.preview_image_url || a.image_url,
-                    is_custom: (a.avatar_id === targetId || (a.name || '').includes('Julian'))
-                }))
                 .filter(a => a.avatar_id && a.preview_image_url);
 
-            // Merge and Deduplicate
+            // Merge
             const combined = [...allLooks, ...processedTop];
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
 
-            // Sort: Julian/Custom targets first
-            unique.sort((a, b) => (b.is_custom ? 1 : 0) - (a.is_custom ? 1 : 0));
+            // Sort: Target first, then non-stock, then stock
+            unique.sort((a, b) => {
+                if (a.is_target) return -1;
+                if (b.is_target) return 1;
+                if (a.is_stock && !b.is_stock) return 1;
+                if (!a.is_stock && b.is_stock) return -1;
+                return 0;
+            });
 
-            setLibraryAvatars(unique);
-            setStatusMessage(`Sync Success: Found ${unique.length} Personal Assets`);
+            // Limit to top 40 to avoid hanging
+            const limited = unique.slice(0, 40);
+
+            setLibraryAvatars(limited);
+            setStatusMessage(`Sync Success: Found ${limited.length} Assets`);
         } catch (error) {
-            console.error('Handshake failed:', error);
-            setStatusMessage('Sync Error: Check Connection');
+            console.error('Sync failed:', error);
+            setStatusMessage('Sync Failed. Check Console.');
         } finally {
             setIsFetchingLibrary(false);
         }
@@ -578,19 +573,14 @@ function App() {
                                     <p style={{ fontSize: '11px', color: '#64748b' }}>Try uploading a new photo first.</p>
                                 </div>
                             ) : (
-                                libraryAvatars.map(avatar => (
+                                libraryAvatars.map((avatar, idx) => (
                                     <div
-                                        key={avatar.avatar_id}
-                                        className="avatar-card"
+                                        key={avatar.avatar_id + idx}
                                         style={styles.avatarCard}
                                         onClick={() => selectFromLibrary(avatar)}
                                     >
-                                        <div style={styles.avatarImage}>
+                                        <div style={styles.imageContainer}>
                                             <img src={avatar.preview_image_url} alt={avatar.name} style={styles.avatarImage} />
-                                        </div>
-                                        <div style={styles.avatarInfo}>
-                                            <div style={styles.avatarName}>{avatar.name || 'Talking Photo'}</div>
-                                            <div style={styles.avatarMeta}>V2 Optimizer</div>
                                         </div>
                                     </div>
                                 ))
@@ -872,9 +862,13 @@ const styles = {
         cursor: 'pointer',
         transition: 'all 0.2s',
         border: '1px solid rgba(255,255,255,0.1)',
-        display: 'flex',
-        flexDirection: 'column',
-        aspectRatio: '2/3'
+        aspectRatio: '2/3',
+        height: '140px'
+    },
+    imageContainer: {
+        width: '100%',
+        height: '100%',
+        position: 'relative'
     },
     avatarImage: {
         width: '100%',
