@@ -93,17 +93,19 @@ function App() {
 
         try {
             // 1. Get Top Level Avatars (General fallback)
+            setStatusMessage('Syncing Avatars (Step 1/3)...');
             const avatarsData = await heyGenClient.getAvatars();
             const topAvatars = avatarsData.data?.avatars || [];
 
             // 2. Get Avatar Groups (The root of Photo Avatars / Looks)
+            setStatusMessage('Syncing Groups (Step 2/3)...');
             const groupsData = await heyGenClient.getAvatarGroups();
             const groups = groupsData.data?.avatar_groups || [];
 
             let allLooks = [];
 
             // 3. Deep Scan each group
-            // In the screenshot, the user has "Julian Vance" group
+            setStatusMessage(`Scanning ${groups.length} Groups...`);
             for (const group of groups) {
                 const gId = group.avatar_group_id || group.id;
                 const gName = group.avatar_group_name || group.name || 'Group';
@@ -140,10 +142,11 @@ function App() {
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
 
             setLibraryAvatars(unique);
-            setStatusMessage(`Sync Complete: Found ${unique.length} Photo Assets`);
+            setStatusMessage(`Sync Success: Found ${unique.length} Assets`);
         } catch (error) {
             console.error('Deep scan failed:', error);
-            setStatusMessage('Library sync failed. Check Transparency Log.');
+            const step = statusMessage.includes('1/3') ? 'Avatars' : statusMessage.includes('2/3') ? 'Groups' : 'Scan';
+            setStatusMessage(`Sync Failed at ${step}: Verify API Path or Key.`);
         } finally {
             setIsFetchingLibrary(false);
         }
