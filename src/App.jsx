@@ -85,18 +85,59 @@ function App() {
         }
     };
 
-    // Fetch library avatars
+    // Fetch library avatars (Deep scan for Groups & Looks)
     const fetchLibrary = async () => {
         setIsFetchingLibrary(true);
         setShowLibrary(true);
         try {
-            const data = await heyGenClient.getAvatars();
-            const avatars = data.data?.avatars || [];
-            // Filter to only show talking photos / photo avatars
-            const filtered = avatars.filter(a => a.type === 'talking_photo');
-            setLibraryAvatars(filtered);
+            // 1. Get Top Level Avatars (General fallback)
+            const avatarsData = await heyGenClient.getAvatars();
+            const topAvatars = avatarsData.data?.avatars || [];
+
+            // 2. Get Avatar Groups (This is where "Looks" live)
+            const groupsData = await heyGenClient.getAvatarGroups();
+            const groups = groupsData.data?.avatar_groups || [];
+
+            let allLooks = [];
+
+            // 3. Scan each group for nested looks
+            for (const group of groups) {
+                try {
+                    const groupDetails = await heyGenClient.getGroupDetails(group.avatar_group_id);
+                    const looks = groupDetails.data?.avatar_looks || [];
+
+                    // Transform "looks" into a structure compatible with our UI
+                    const formattedLooks = looks.map(look => ({
+                        avatar_id: look.avatar_id,
+                        name: `${group.avatar_group_name} - ${look.avatar_look_name || 'Look'}`,
+                        preview_image_url: look.preview_image_url || look.image_url,
+                        type: 'talking_photo'
+                    }));
+
+                    allLooks = [...allLooks, ...formattedLooks];
+                } catch (err) {
+                    console.warn(`Failed to fetch details for group ${group.avatar_group_id}`, err);
+                }
+            }
+
+            // Combine top-level photo avatars with our deep-scanned looks
+            const topPhotos = topAvatars
+                .filter(a => a.type === 'talking_photo')
+                .map(a => ({
+                    avatar_id: a.avatar_id,
+                    name: a.name,
+                    preview_image_url: a.preview_image_url,
+                    type: 'talking_photo'
+                }));
+
+            // Deduplicate by avatar_id
+            const combined = [...allLooks, ...topPhotos];
+            const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
+
+            setLibraryAvatars(unique);
         } catch (error) {
             console.error('Failed to fetch library:', error);
+            setStatusMessage('Library sync failed. Check connection.');
         } finally {
             setIsFetchingLibrary(false);
         }

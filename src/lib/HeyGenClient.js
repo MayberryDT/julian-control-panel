@@ -74,6 +74,20 @@ export const heyGenClient = {
     },
 
     /**
+     * Get list of photo avatar groups
+     */
+    async getAvatarGroups() {
+        return this._fetch(`${BASE_URL}/v2/avatar_group.list`);
+    },
+
+    /**
+     * Get details for an avatar group (contains the looks)
+     */
+    async getGroupDetails(groupId) {
+        return this._fetch(`${BASE_URL}/v2/avatar_group.get?avatar_group_id=${groupId}`);
+    },
+
+    /**
      * Upload an image asset
      * @param {File} file 
      */
