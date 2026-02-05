@@ -89,34 +89,40 @@ function App() {
     const fetchLibrary = async () => {
         setIsFetchingLibrary(true);
         setShowLibrary(true);
+        setStatusMessage('Syncing with HeyGen Archives...');
+
         try {
             // 1. Get Top Level Avatars (General fallback)
             const avatarsData = await heyGenClient.getAvatars();
             const topAvatars = avatarsData.data?.avatars || [];
 
-            // 2. Get Avatar Groups (This is where "Looks" live)
+            // 2. Get Avatar Groups (The root of Photo Avatars / Looks)
             const groupsData = await heyGenClient.getAvatarGroups();
             const groups = groupsData.data?.avatar_groups || [];
 
             let allLooks = [];
 
-            // 3. Scan each group for nested looks
+            // 3. Deep Scan each group
+            // In the screenshot, the user has "Julian Vance" group
             for (const group of groups) {
-                try {
-                    const groupDetails = await heyGenClient.getGroupDetails(group.avatar_group_id);
-                    const looks = groupDetails.data?.avatar_looks || [];
+                const gId = group.avatar_group_id || group.id;
+                const gName = group.avatar_group_name || group.name || 'Group';
 
-                    // Transform "looks" into a structure compatible with our UI
+                try {
+                    const groupDetails = await heyGenClient.getGroupDetails(gId);
+                    // Support multiple possible key names from HeyGen API
+                    const looks = groupDetails.data?.avatar_looks || groupDetails.data?.avatars || [];
+
                     const formattedLooks = looks.map(look => ({
-                        avatar_id: look.avatar_id,
-                        name: `${group.avatar_group_name} - ${look.avatar_look_name || 'Look'}`,
+                        avatar_id: look.avatar_id || look.id,
+                        name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
                         preview_image_url: look.preview_image_url || look.image_url,
                         type: 'talking_photo'
                     }));
 
                     allLooks = [...allLooks, ...formattedLooks];
                 } catch (err) {
-                    console.warn(`Failed to fetch details for group ${group.avatar_group_id}`, err);
+                    console.warn(`Group ${gId} sync failed (Likely empty or restricted)`);
                 }
             }
 
@@ -124,20 +130,20 @@ function App() {
             const topPhotos = topAvatars
                 .filter(a => a.type === 'talking_photo')
                 .map(a => ({
-                    avatar_id: a.avatar_id,
-                    name: a.name,
+                    avatar_id: a.avatar_id || a.id,
+                    name: a.name || 'Talking Photo',
                     preview_image_url: a.preview_image_url,
                     type: 'talking_photo'
                 }));
 
-            // Deduplicate by avatar_id
             const combined = [...allLooks, ...topPhotos];
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
 
             setLibraryAvatars(unique);
+            setStatusMessage(`Sync Complete: Found ${unique.length} Photo Assets`);
         } catch (error) {
-            console.error('Failed to fetch library:', error);
-            setStatusMessage('Library sync failed. Check connection.');
+            console.error('Deep scan failed:', error);
+            setStatusMessage('Library sync failed. Check Transparency Log.');
         } finally {
             setIsFetchingLibrary(false);
         }
