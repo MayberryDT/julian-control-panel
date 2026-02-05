@@ -97,15 +97,17 @@ function App() {
             const avatarsData = await heyGenClient.getAvatars();
             const topAvatars = avatarsData.data?.avatars || [];
 
-            // 2. Get Avatar Groups (Crucial for Julian's 27 Looks)
-            setStatusMessage('Syncing Custom Groups (Step 2/3)...');
+            // DIAGNOSTIC: Log the first 10 names so we can see what the API is handing back
+            console.log('SYNC DIAGNOSTIC: First 10 Names:', topAvatars.slice(0, 10).map(a => a.avatar_name || a.name || 'Untitled'));
+
+            // 2. Get Avatar Groups
+            setStatusMessage('Syncing Custom Folders (Step 2/3)...');
             let groups = [];
             try {
                 const groupsData = await heyGenClient.getAvatarGroups();
                 groups = groupsData.data?.avatar_groups || [];
-                console.log(`Found ${groups.length} Custom Avatar Groups`);
             } catch (groupError) {
-                console.warn('Group sync skipped:', groupError.message);
+                console.warn('Group sync skipped');
             }
 
             let allLooks = [];
@@ -121,28 +123,29 @@ function App() {
                         const groupDetails = await heyGenClient.getGroupDetails(gId);
                         const looks = groupDetails.data?.avatar_looks || groupDetails.data?.avatars || [];
 
-                        const formattedLooks = looks.map(look => ({
+                        allLooks = [...allLooks, ...looks.map(look => ({
                             avatar_id: look.avatar_id || look.id,
                             name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
                             preview_image_url: look.preview_image_url || look.image_url,
                             is_custom: true
-                        }));
-
-                        allLooks = [...allLooks, ...formattedLooks];
+                        }))];
                     } catch (err) {
                         console.warn(`Group ${gId} details failed`);
                     }
                 }
             }
 
-            // FILTER: We only want Photo Avatars (Julian's assets)
-            // Stock Video Avatars usually have 'gender', 'preview_video_url', or specific ID patterns
+            // FILTER: We want Julian's assets, not Abigail's 100 outfits.
+            const stockActors = ['Abigail', 'Joshua', 'Flora', 'Grace', 'Anna', 'Zhen', 'Davis'];
+
             const processedTop = topAvatars
                 .filter(a => {
-                    // Exclude HeyGen Stock Actors (usually have video previews or specific names)
-                    const isStockActor = a.preview_video_url || a.gender || a.avatar_name?.includes('Abigail') || a.avatar_name?.includes('Joshua');
-                    // Include if it's explicitly a talking photo or lacks stock traits
-                    return (a.type === 'talking_photo' || a.type === 'photo_avatar' || !isStockActor);
+                    const name = a.avatar_name || a.name || '';
+                    // Rule 1: Always keep anything that looks like the User (Julian)
+                    if (name.includes('Julian')) return true;
+                    // Rule 2: Block stock actors only if they have a video preview (Streaming Avatars)
+                    const isObviousStock = stockActors.some(stock => name.includes(stock)) && a.preview_video_url;
+                    return !isObviousStock;
                 })
                 .map(a => ({
                     avatar_id: a.avatar_id || a.id,
@@ -152,20 +155,18 @@ function App() {
                 }))
                 .filter(a => a.avatar_id && a.preview_image_url);
 
-            // Prioritize custom looks from folders (Step 3) over general listed avatars
+            // Merge and Deduplicate
             const combined = [...allLooks, ...processedTop];
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
 
-            // Final Sort: Put custom looks at the top
-            unique.sort((a, b) => (b.is_custom ? 1 : 0) - (a.is_custom ? 1 : 0));
+            // Keep it under control (Max 50 icons)
+            const limited = unique.slice(0, 50);
 
-            setLibraryAvatars(unique);
-            setStatusMessage(unique.length > 0
-                ? `Sync Success: Surfaced ${unique.length} Visual Assets`
-                : 'Sync Complete: No custom photo assets detected.');
+            setLibraryAvatars(limited);
+            setStatusMessage(`Sync Success: Surfaced ${limited.length} Assets`);
         } catch (error) {
             console.error('Handshake failed:', error);
-            setStatusMessage(`Sync Failed: ${error.message}`);
+            setStatusMessage('Sync Error: Check Connection');
         } finally {
             setIsFetchingLibrary(false);
         }
