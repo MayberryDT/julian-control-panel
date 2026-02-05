@@ -28,6 +28,9 @@ function App() {
     );
     const [isDragActive, setIsDragActive] = useState(false);
     const [engine, setEngine] = useState('v4');
+    const [libraryAvatars, setLibraryAvatars] = useState([]);
+    const [isFetchingLibrary, setIsFetchingLibrary] = useState(false);
+    const [showLibrary, setShowLibrary] = useState(false);
 
     // Initial Check
     useEffect(() => {
@@ -50,6 +53,8 @@ function App() {
         setVoices([]);
         setImageKey('');
         setAssetId('');
+        setLibraryAvatars([]);
+        setShowLibrary(false);
         setStatusMessage(null);
     };
 
@@ -78,6 +83,30 @@ function App() {
         } finally {
             setIsFetchingVoices(false);
         }
+    };
+
+    // Fetch library avatars
+    const fetchLibrary = async () => {
+        setIsFetchingLibrary(true);
+        setShowLibrary(true);
+        try {
+            const data = await heyGenClient.getAvatars();
+            const avatars = data.data?.avatars || [];
+            // Filter to only show talking photos / photo avatars
+            const filtered = avatars.filter(a => a.type === 'talking_photo');
+            setLibraryAvatars(filtered);
+        } catch (error) {
+            console.error('Failed to fetch library:', error);
+        } finally {
+            setIsFetchingLibrary(false);
+        }
+    };
+
+    const selectFromLibrary = (avatar) => {
+        setAssetId(avatar.avatar_id);
+        setImageKey(avatar.avatar_id); // Show success in UI
+        setShowLibrary(false);
+        setStatusMessage(`Selected Library Asset: ${avatar.name || 'Unnamed'}`);
     };
 
     // Handle file upload
@@ -250,7 +279,15 @@ function App() {
 
                     {/* Photo Upload */}
                     <div style={styles.inputGroup}>
-                        <label style={styles.label}>Visual Asset (Drag & Drop)</label>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={styles.label}>Visual Asset</label>
+                            <button
+                                onClick={fetchLibrary}
+                                style={styles.refreshBtn}
+                            >
+                                Browse Library
+                            </button>
+                        </div>
                         <div
                             onDragEnter={handleDrag}
                             onDragLeave={handleDrag}
@@ -442,6 +479,49 @@ function App() {
             <div style={styles.footerLog}>
                 <TransparencyLog />
             </div>
+
+            {/* Library Modal */}
+            {showLibrary && (
+                <div style={styles.modalOverlay} onClick={() => setShowLibrary(false)}>
+                    <div className="modal-animate" style={styles.modalContent} onClick={e => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>
+                            <h3 style={{ margin: 0 }}>My HeyGen Library</h3>
+                            <button onClick={() => setShowLibrary(false)} style={styles.closeBtn}>×</button>
+                        </div>
+
+                        <div style={styles.libraryGrid}>
+                            {isFetchingLibrary ? (
+                                <div style={styles.emptyState}>
+                                    <Loader2 className="animate-spin" size={32} color="#38bdf8" />
+                                    <p>Accessing Secure Archives...</p>
+                                </div>
+                            ) : libraryAvatars.length === 0 ? (
+                                <div style={styles.emptyState}>
+                                    <p>No Talking Photos found in your library.</p>
+                                    <p style={{ fontSize: '11px', color: '#64748b' }}>Try uploading a new photo first.</p>
+                                </div>
+                            ) : (
+                                libraryAvatars.map(avatar => (
+                                    <div
+                                        key={avatar.avatar_id}
+                                        className="avatar-card"
+                                        style={styles.avatarCard}
+                                        onClick={() => selectFromLibrary(avatar)}
+                                    >
+                                        <div style={styles.avatarPreview}>
+                                            <img src={avatar.preview_image_url} alt={avatar.name} style={styles.avatarImg} />
+                                        </div>
+                                        <div style={styles.avatarInfo}>
+                                            <div style={styles.avatarName}>{avatar.name || 'Talking Photo'}</div>
+                                            <div style={styles.avatarMeta}>V2 Optimizer</div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div style={{ height: '200px' }}></div>
         </div>
@@ -657,6 +737,102 @@ const styles = {
         right: 0,
         zIndex: 40,
         boxShadow: '0 -20px 40px rgba(0,0,0,0.5)'
+    },
+    modalOverlay: {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        backdropFilter: 'blur(10px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+        padding: '20px'
+    },
+    modalContent: {
+        backgroundColor: '#111114',
+        borderRadius: '24px',
+        border: '1px solid #1e1e24',
+        width: '100%',
+        maxWidth: '800px',
+        maxHeight: '80vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+    },
+    modalHeader: {
+        padding: '20px 24px',
+        borderBottom: '1px solid #1e1e24',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        background: 'linear-gradient(to right, #111114, #18181b)'
+    },
+    closeBtn: {
+        background: 'none',
+        border: 'none',
+        color: '#64748b',
+        fontSize: '28px',
+        cursor: 'pointer',
+        lineHeight: 1
+    },
+    libraryGrid: {
+        padding: '24px',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+        gap: '20px',
+        overflowY: 'auto',
+        minHeight: '200px'
+    },
+    avatarCard: {
+        backgroundColor: '#18181b',
+        borderRadius: '16px',
+        border: '1px solid #27272a',
+        overflow: 'hidden',
+        cursor: 'pointer',
+    },
+    avatarPreview: {
+        aspectRatio: '1',
+        overflow: 'hidden',
+        backgroundColor: '#09090b',
+        position: 'relative'
+    },
+    avatarImg: {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover'
+    },
+    avatarInfo: {
+        padding: '12px',
+    },
+    avatarName: {
+        fontSize: '12px',
+        fontWeight: '700',
+        color: '#f8fafc',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
+    },
+    avatarMeta: {
+        fontSize: '9px',
+        color: '#38bdf8',
+        marginTop: '4px',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px'
+    },
+    emptyState: {
+        gridColumn: '1 / -1',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '60px 0',
+        color: '#94a3b8',
+        gap: '12px'
     }
 };
 

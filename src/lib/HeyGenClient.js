@@ -67,6 +67,13 @@ export const heyGenClient = {
     },
 
     /**
+     * Get list of avatars (v2 library)
+     */
+    async getAvatars() {
+        return this._fetch(`${BASE_URL}/v2/avatars`);
+    },
+
+    /**
      * Upload an image asset
      * @param {File} file 
      */
