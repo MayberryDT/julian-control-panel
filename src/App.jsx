@@ -138,30 +138,55 @@ function App() {
         setStatusMessage('Initiating Render Sequence...');
 
         try {
-            const payload = {
-                image_key: imageKey,
-                video_title: `Julian Control Panel - ${new Date().toLocaleTimeString()}`,
-                script: script,
-                voice_id: voiceId,
-                voice_settings: {
-                    speed: parseFloat(speed),
-                },
-                video_orientation: 'portrait',
-                fit: 'cover',
-                caption: false,
-            };
+            let payload;
+            const title = `Julian Control Panel - ${new Date().toLocaleTimeString()}`;
 
-            // V4 Specific Features
             if (engine === 'v4') {
-                payload.custom_motion_prompt = motionPrompt;
-                payload.enhance_custom_motion_prompt = true;
+                // Avatar IV simplified structure
+                payload = {
+                    image_key: imageKey,
+                    video_title: title,
+                    script: script,
+                    voice_id: voiceId,
+                    voice_settings: {
+                        speed: parseFloat(speed),
+                    },
+                    video_orientation: 'portrait',
+                    fit: 'cover',
+                    caption: false,
+                    custom_motion_prompt: motionPrompt,
+                    enhance_custom_motion_prompt: true,
+                };
+            } else {
+                // Avatar III (V2 Engine) required structure
+                payload = {
+                    title: title,
+                    video_inputs: [
+                        {
+                            character: {
+                                type: 'talking_photo',
+                                talking_photo_id: imageKey,
+                            },
+                            voice: {
+                                type: 'text',
+                                input_text: script,
+                                voice_id: voiceId,
+                                speed: parseFloat(speed),
+                            },
+                            background: {
+                                type: 'color',
+                                value: '#09090b', // Match app background
+                            }
+                        }
+                    ],
+                    dimension: { width: 720, height: 1280 }, // 720p Portrait (Credit efficient)
+                    caption: false,
+                };
             }
 
             const data = await heyGenClient.generateVideo(payload, engine);
-            const videoId = data.data.video_id;
-            setStatusMessage(
-                `✅ Render started! Video ID: ${videoId}`
-            );
+            const videoId = data.data.video_id || data.data.id;
+            setStatusMessage(`✅ Render started! Video ID: ${videoId}`);
         } catch (error) {
             setStatusMessage('Render Failed. See Transparency Log.');
         } finally {
