@@ -2,10 +2,22 @@
   command = "npm run build"
   publish = "dist"
 
+[[redirects]]
+  from = "/api/heygen/*"
+  to = "https://api.heygen.com/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/heygen-upload/*"
+  to = "https://upload.heygen.com/:splat"
+  status = 200
+  force = true
+
 [[headers]]
   for = "/*"
   [headers.values]
-    # Security Headers
+    # Security Headers - Proxied through 'self'
     Content-Security-Policy = "default-src 'self'; connect-src 'self' https://api.heygen.com https://upload.heygen.com https://*.heygen.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; frame-ancestors 'none'; object-src 'none'; upgrade-insecure-requests;"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"

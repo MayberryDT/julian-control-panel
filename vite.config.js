@@ -6,21 +6,16 @@ export default defineConfig({
     plugins: [react()],
     server: {
         proxy: {
-            '/api': {
+            '/api/heygen': {
                 target: 'https://api.heygen.com',
                 changeOrigin: true,
-                secure: true,
-                rewrite: (path) => path.replace(/^\/api/, '/v2/photo'),
-                configure: (proxy, _options) => {
-                    proxy.on('proxyReq', (proxyReq, req, _res) => {
-                        // Forward the X-Api-Key header
-                        const apiKey = req.headers['x-api-key'];
-                        if (apiKey) {
-                            proxyReq.setHeader('X-Api-Key', apiKey);
-                        }
-                    });
-                },
+                rewrite: (path) => path.replace(/^\/api\/heygen/, '')
             },
+            '/api/heygen-upload': {
+                target: 'https://upload.heygen.com',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/heygen-upload/, '')
+            }
         },
     },
 })

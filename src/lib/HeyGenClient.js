@@ -1,8 +1,8 @@
 import { keyVault } from './KeyVault';
 import { logger } from './TransparencyLog';
 
-const BASE_URL = 'https://api.heygen.com';
-const UPLOAD_URL = 'https://upload.heygen.com/v1/asset';
+const BASE_URL = '/api/heygen';
+const UPLOAD_URL = '/api/heygen-upload/v1/asset';
 
 /**
  * HeyGenClient - Direct client-side API interaction
