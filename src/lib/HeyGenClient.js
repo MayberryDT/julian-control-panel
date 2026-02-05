@@ -71,21 +71,17 @@ export const heyGenClient = {
      * @param {File} file 
      */
     async uploadAsset(file) {
-        // Upload requires binary body and slightly different handling
-        // Content-Type should NOT be set manually for fetch with binary/blob in some cases,
-        // but HeyGen expects specific types. Let's try raw binary.
+        // Fix for "Mime Type Mismatch" error (e.g. image/jpeg != image/png):
+        // Browsers can sometimes misidentify file types. By sending the file 
+        // as an ArrayBuffer and omitting the Content-Type header, we "un-restrict" 
+        // the upload, allowing HeyGen's server to sniff the actual file content 
+        // rather than relying on the browser's deduction.
 
-        let contentType = file.type || 'image/jpeg';
-
-        // Ensure we send correct magic bytes/mime (simplified)
-        // Similar logic to previous proxy but executed in browser
+        const buffer = await file.arrayBuffer();
 
         return this._fetch(UPLOAD_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': contentType
-            },
-            body: file
+            body: buffer
         });
     },
 
