@@ -92,33 +92,25 @@ function App() {
         setStatusMessage('Syncing with HeyGen Archives...');
 
         try {
-            // 1. Get Top Level Avatars (General fallback)
+            // 1. Get Top Level Avatars
             setStatusMessage('Syncing Avatars (Step 1/3)...');
             const avatarsData = await heyGenClient.getAvatars();
             const topAvatars = avatarsData.data?.avatars || [];
 
-            // DISCOVERY LOG: Let's see the actual structure of Julian's avatars
-            if (topAvatars.length > 0) {
-                console.log('RE-SYNC: Discovery - Raw Avatar Object:', topAvatars[0]);
-            }
-
-            // 2. Get Avatar Groups (Optional step)
-            setStatusMessage('Syncing Groups (Step 2/3)...');
+            // 2. Get Avatar Groups (Crucial for Julian's 27 Looks)
+            setStatusMessage('Syncing Custom Groups (Step 2/3)...');
             let groups = [];
             try {
-                // Extended timeout to 8s for proxy stability
-                const groupsPromise = heyGenClient.getAvatarGroups();
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Group sync timeout')), 8000));
-
-                const groupsData = await Promise.race([groupsPromise, timeoutPromise]);
+                const groupsData = await heyGenClient.getAvatarGroups();
                 groups = groupsData.data?.avatar_groups || [];
+                console.log(`Found ${groups.length} Custom Avatar Groups`);
             } catch (groupError) {
                 console.warn('Group sync skipped:', groupError.message);
             }
 
             let allLooks = [];
 
-            // 3. Deep Scan each group
+            // 3. Deep Scan each custom group
             if (groups.length > 0) {
                 setStatusMessage(`Scanning ${groups.length} Groups...`);
                 for (const group of groups) {
@@ -133,6 +125,7 @@ function App() {
                             avatar_id: look.avatar_id || look.id,
                             name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
                             preview_image_url: look.preview_image_url || look.image_url,
+                            is_custom: true
                         }));
 
                         allLooks = [...allLooks, ...formattedLooks];
@@ -142,24 +135,36 @@ function App() {
                 }
             }
 
-            // PERMISSIVE MODE: If it has an ID and a preview, show it!
+            // FILTER: We only want Photo Avatars (Julian's assets)
+            // Stock Video Avatars usually have 'gender', 'preview_video_url', or specific ID patterns
             const processedTop = topAvatars
+                .filter(a => {
+                    // Exclude HeyGen Stock Actors (usually have video previews or specific names)
+                    const isStockActor = a.preview_video_url || a.gender || a.avatar_name?.includes('Abigail') || a.avatar_name?.includes('Joshua');
+                    // Include if it's explicitly a talking photo or lacks stock traits
+                    return (a.type === 'talking_photo' || a.type === 'photo_avatar' || !isStockActor);
+                })
                 .map(a => ({
                     avatar_id: a.avatar_id || a.id,
-                    name: a.name || 'Avatar Asset',
+                    name: a.name || a.avatar_name || 'Talking Photo',
                     preview_image_url: a.preview_image_url || a.image_url,
+                    is_custom: false
                 }))
                 .filter(a => a.avatar_id && a.preview_image_url);
 
+            // Prioritize custom looks from folders (Step 3) over general listed avatars
             const combined = [...allLooks, ...processedTop];
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
 
+            // Final Sort: Put custom looks at the top
+            unique.sort((a, b) => (b.is_custom ? 1 : 0) - (a.is_custom ? 1 : 0));
+
             setLibraryAvatars(unique);
             setStatusMessage(unique.length > 0
-                ? `Sync Success: Found ${unique.length} Assets`
-                : 'Sync Complete: No visual assets found.');
+                ? `Sync Success: Surfaced ${unique.length} Visual Assets`
+                : 'Sync Complete: No custom photo assets detected.');
         } catch (error) {
-            console.error('Deep scan failed:', error);
+            console.error('Handshake failed:', error);
             setStatusMessage(`Sync Failed: ${error.message}`);
         } finally {
             setIsFetchingLibrary(false);
