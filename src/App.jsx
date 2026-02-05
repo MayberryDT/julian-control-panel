@@ -97,40 +97,56 @@ function App() {
             const avatarsData = await heyGenClient.getAvatars();
             const topAvatars = avatarsData.data?.avatars || [];
 
-            // 2. Get Avatar Groups (The root of Photo Avatars / Looks)
+            // Log types for debugging
+            if (topAvatars.length > 0) {
+                console.log('Detected Avatar Types:', topAvatars.slice(0, 5).map(a => a.type));
+            }
+
+            // 2. Get Avatar Groups (Optional step, don't let it hang the whole sync)
             setStatusMessage('Syncing Groups (Step 2/3)...');
-            const groupsData = await heyGenClient.getAvatarGroups();
-            const groups = groupsData.data?.avatar_groups || [];
+            let groups = [];
+            try {
+                // Set a timeout-like behavior by not awaiting forever if the proxy hangs
+                const groupsPromise = heyGenClient.getAvatarGroups();
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Group sync timeout')), 5000));
+
+                const groupsData = await Promise.race([groupsPromise, timeoutPromise]);
+                groups = groupsData.data?.avatar_groups || [];
+            } catch (groupError) {
+                console.warn('Group sync skipped or failed:', groupError.message);
+            }
 
             let allLooks = [];
 
             // 3. Deep Scan each group
-            setStatusMessage(`Scanning ${groups.length} Groups...`);
-            for (const group of groups) {
-                const gId = group.avatar_group_id || group.id;
-                const gName = group.avatar_group_name || group.name || 'Group';
+            if (groups.length > 0) {
+                setStatusMessage(`Scanning ${groups.length} Groups...`);
+                for (const group of groups) {
+                    const gId = group.avatar_group_id || group.id;
+                    const gName = group.avatar_group_name || group.name || 'Group';
 
-                try {
-                    const groupDetails = await heyGenClient.getGroupDetails(gId);
-                    // Support multiple possible key names from HeyGen API
-                    const looks = groupDetails.data?.avatar_looks || groupDetails.data?.avatars || [];
+                    try {
+                        const groupDetails = await heyGenClient.getGroupDetails(gId);
+                        const looks = groupDetails.data?.avatar_looks || groupDetails.data?.avatars || [];
 
-                    const formattedLooks = looks.map(look => ({
-                        avatar_id: look.avatar_id || look.id,
-                        name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
-                        preview_image_url: look.preview_image_url || look.image_url,
-                        type: 'talking_photo'
-                    }));
+                        const formattedLooks = looks.map(look => ({
+                            avatar_id: look.avatar_id || look.id,
+                            name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
+                            preview_image_url: look.preview_image_url || look.image_url,
+                            type: 'talking_photo'
+                        }));
 
-                    allLooks = [...allLooks, ...formattedLooks];
-                } catch (err) {
-                    console.warn(`Group ${gId} sync failed (Likely empty or restricted)`);
+                        allLooks = [...allLooks, ...formattedLooks];
+                    } catch (err) {
+                        console.warn(`Group ${gId} details failed`);
+                    }
                 }
             }
 
-            // Combine top-level photo avatars with our deep-scanned looks
+            // Combine and filter
+            // Be more inclusive with types (some might be 'photo' or 'talking_photo' or 'photo_avatar')
             const topPhotos = topAvatars
-                .filter(a => a.type === 'talking_photo')
+                .filter(a => ['talking_photo', 'photo', 'photo_avatar'].includes(a.type))
                 .map(a => ({
                     avatar_id: a.avatar_id || a.id,
                     name: a.name || 'Talking Photo',
@@ -141,12 +157,18 @@ function App() {
             const combined = [...allLooks, ...topPhotos];
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
 
+            if (unique.length === 0 && topAvatars.length > 0) {
+                console.log('No photos found after filter. First avatar type:', topAvatars[0].type);
+            }
+
             setLibraryAvatars(unique);
-            setStatusMessage(`Sync Success: Found ${unique.length} Assets`);
+            setStatusMessage(unique.length > 0
+                ? `Sync Success: Found ${unique.length} Assets`
+                : 'Sync Complete: No assets found in account.');
         } catch (error) {
             console.error('Deep scan failed:', error);
             const step = statusMessage.includes('1/3') ? 'Avatars' : statusMessage.includes('2/3') ? 'Groups' : 'Scan';
-            setStatusMessage(`Sync Failed at ${step}: Verify API Path or Key.`);
+            setStatusMessage(`Sync Failed at ${step}: ${error.message}`);
         } finally {
             setIsFetchingLibrary(false);
         }
