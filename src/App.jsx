@@ -97,23 +97,23 @@ function App() {
             const avatarsData = await heyGenClient.getAvatars();
             const topAvatars = avatarsData.data?.avatars || [];
 
-            // Log types for debugging
+            // DISCOVERY LOG: Let's see the actual structure of Julian's avatars
             if (topAvatars.length > 0) {
-                console.log('Detected Avatar Types:', topAvatars.slice(0, 5).map(a => a.type));
+                console.log('RE-SYNC: Discovery - Raw Avatar Object:', topAvatars[0]);
             }
 
-            // 2. Get Avatar Groups (Optional step, don't let it hang the whole sync)
+            // 2. Get Avatar Groups (Optional step)
             setStatusMessage('Syncing Groups (Step 2/3)...');
             let groups = [];
             try {
-                // Set a timeout-like behavior by not awaiting forever if the proxy hangs
+                // Extended timeout to 8s for proxy stability
                 const groupsPromise = heyGenClient.getAvatarGroups();
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Group sync timeout')), 5000));
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Group sync timeout')), 8000));
 
                 const groupsData = await Promise.race([groupsPromise, timeoutPromise]);
                 groups = groupsData.data?.avatar_groups || [];
             } catch (groupError) {
-                console.warn('Group sync skipped or failed:', groupError.message);
+                console.warn('Group sync skipped:', groupError.message);
             }
 
             let allLooks = [];
@@ -133,7 +133,6 @@ function App() {
                             avatar_id: look.avatar_id || look.id,
                             name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
                             preview_image_url: look.preview_image_url || look.image_url,
-                            type: 'talking_photo'
                         }));
 
                         allLooks = [...allLooks, ...formattedLooks];
@@ -143,32 +142,25 @@ function App() {
                 }
             }
 
-            // Combine and filter
-            // Be more inclusive with types (some might be 'photo' or 'talking_photo' or 'photo_avatar')
-            const topPhotos = topAvatars
-                .filter(a => ['talking_photo', 'photo', 'photo_avatar'].includes(a.type))
+            // PERMISSIVE MODE: If it has an ID and a preview, show it!
+            const processedTop = topAvatars
                 .map(a => ({
                     avatar_id: a.avatar_id || a.id,
-                    name: a.name || 'Talking Photo',
-                    preview_image_url: a.preview_image_url,
-                    type: 'talking_photo'
-                }));
+                    name: a.name || 'Avatar Asset',
+                    preview_image_url: a.preview_image_url || a.image_url,
+                }))
+                .filter(a => a.avatar_id && a.preview_image_url);
 
-            const combined = [...allLooks, ...topPhotos];
+            const combined = [...allLooks, ...processedTop];
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
-
-            if (unique.length === 0 && topAvatars.length > 0) {
-                console.log('No photos found after filter. First avatar type:', topAvatars[0].type);
-            }
 
             setLibraryAvatars(unique);
             setStatusMessage(unique.length > 0
                 ? `Sync Success: Found ${unique.length} Assets`
-                : 'Sync Complete: No assets found in account.');
+                : 'Sync Complete: No visual assets found.');
         } catch (error) {
             console.error('Deep scan failed:', error);
-            const step = statusMessage.includes('1/3') ? 'Avatars' : statusMessage.includes('2/3') ? 'Groups' : 'Scan';
-            setStatusMessage(`Sync Failed at ${step}: ${error.message}`);
+            setStatusMessage(`Sync Failed: ${error.message}`);
         } finally {
             setIsFetchingLibrary(false);
         }
