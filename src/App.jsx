@@ -92,14 +92,23 @@ function App() {
         setStatusMessage('Syncing with HeyGen Archives...');
 
         try {
-            // 1. Get Top Level Avatars
-            setStatusMessage('Syncing Avatars (Step 1/3)...');
-            const avatarsData = await heyGenClient.getAvatars();
-            const topAvatars = avatarsData.data?.avatars || [];
-
-            // PRIORITY TARGET
+            // TARGET ID (Provided by Julian)
             const targetId = '4c38caa16512480abb4536127bd58759';
-            console.log('SYNC: Checking for ID:', targetId);
+            console.log('SYNC: Deep Discovery for ID:', targetId);
+
+            // 1. Concurrent Fetch (V2 Avatars + V1 Photos + V1 Assets)
+            setStatusMessage('Deep Scanning Assets (Step 1/3)...');
+            const [v2Data, v1Photos, v1Assets] = await Promise.allSettled([
+                heyGenClient.getAvatars(),
+                heyGenClient.getTalkingPhotosV1(),
+                heyGenClient.getAssetsV1()
+            ]);
+
+            const topAvatars = v2Data.status === 'fulfilled' ? (v2Data.value.data?.avatars || []) : [];
+            const legacyPhotos = v1Photos.status === 'fulfilled' ? (v1Photos.value.data?.talking_photos || []) : [];
+            const assets = v1Assets.status === 'fulfilled' ? (v1Assets.value.data?.assets || []) : [];
+
+            console.log(`Scan Results: V2(${topAvatars.length}) Legacy(${legacyPhotos.length}) Assets(${assets.length})`);
 
             // 2. Get Avatar Groups
             setStatusMessage('Syncing Groups (Step 2/3)...');
@@ -107,14 +116,13 @@ function App() {
             try {
                 const groupsData = await heyGenClient.getAvatarGroups();
                 groups = groupsData.data?.avatar_groups || [];
-                console.log('SYNC: Groups Found:', groups.length);
-            } catch (err) { console.warn('Group fail'); }
+            } catch (err) { console.warn('Group skip'); }
 
             let allLooks = [];
 
             // 3. Deep Scan each custom group
             if (groups.length > 0) {
-                setStatusMessage(`Scanning ${groups.length} Groups...`);
+                setStatusMessage(`Scanning ${groups.length} Folders...`);
                 for (const group of groups) {
                     const gId = group.avatar_group_id || group.id;
                     const gName = group.avatar_group_name || group.name || 'Group';
@@ -125,50 +133,63 @@ function App() {
                             avatar_id: look.avatar_id || look.id,
                             name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
                             preview_image_url: look.preview_image_url || look.image_url,
-                            is_target: (look.avatar_id || look.id) === targetId
                         }))];
                     } catch (err) { }
                 }
             }
 
-            // PERMISSIVE PROCESSING
-            const processedTop = topAvatars
-                .map(a => {
-                    const id = a.avatar_id || a.id;
-                    const isTarget = id === targetId || id?.includes(targetId);
-                    if (isTarget) console.log('SYNC: Found Priority Asset!', a);
+            // NORMALIZE & MERGE
+            // We search V2, V1, Assets, and deep groups
+            const normalizedGeneral = [
+                ...topAvatars.map(a => ({
+                    avatar_id: a.avatar_id || a.id,
+                    name: a.avatar_name || a.name || 'Avatar',
+                    preview_image_url: a.preview_image_url || a.image_url,
+                    is_stock: !!(a.preview_video_url || a.gender)
+                })),
+                ...legacyPhotos.map(a => ({
+                    avatar_id: a.talking_photo_id || a.id,
+                    name: a.talking_photo_name || a.name || 'Legacy Photo',
+                    preview_image_url: a.preview_image_url || a.image_url,
+                    is_stock: false
+                })),
+                ...assets.filter(a => a.type === 'image').map(a => ({
+                    avatar_id: a.asset_id || a.id,
+                    name: a.name || 'Image Asset',
+                    preview_image_url: a.preview_image_url || a.image_url,
+                    is_stock: false
+                }))
+            ];
 
-                    return {
-                        avatar_id: id,
-                        name: a.avatar_name || a.name || 'Talking Photo',
-                        preview_image_url: a.preview_image_url || a.image_url,
-                        is_target: isTarget,
-                        is_stock: (a.preview_video_url || a.gender) && !isTarget
-                    };
-                })
-                .filter(a => a.avatar_id && a.preview_image_url);
-
-            // Merge
-            const combined = [...allLooks, ...processedTop];
+            const combined = [...allLooks, ...normalizedGeneral];
             const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
 
-            // Sort: Target first, then non-stock, then stock
-            unique.sort((a, b) => {
-                if (a.is_target) return -1;
-                if (b.is_target) return 1;
+            // Priority Tagging
+            const prioritized = unique.map(a => ({
+                ...a,
+                is_target: a.avatar_id === targetId || a.avatar_id?.includes(targetId) || a.name?.toLowerCase().includes('julian')
+            }));
+
+            // Sort: Targets first, then my stuff (non-stock), then stock
+            prioritized.sort((a, b) => {
+                if (a.is_target && !b.is_target) return -1;
+                if (!a.is_target && b.is_target) return 1;
                 if (a.is_stock && !b.is_stock) return 1;
                 if (!a.is_stock && b.is_stock) return -1;
                 return 0;
             });
 
-            // Limit to top 40 to avoid hanging
-            const limited = unique.slice(0, 40);
-
+            const limited = prioritized.slice(0, 50);
             setLibraryAvatars(limited);
             setStatusMessage(`Sync Success: Found ${limited.length} Assets`);
+
+            if (prioritized.some(p => p.is_target)) {
+                console.log('SYNC: Julian Detected in Library!');
+            }
+
         } catch (error) {
-            console.error('Sync failed:', error);
-            setStatusMessage('Sync Failed. Check Console.');
+            console.error('Handshake failed:', error);
+            setStatusMessage('Sync Failed. Try Again.');
         } finally {
             setIsFetchingLibrary(false);
         }

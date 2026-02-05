@@ -137,6 +137,20 @@ export const heyGenClient = {
     },
 
     /**
+     * DISCOVERY: Get Talking Photos (V1 Legacy)
+     */
+    async getTalkingPhotosV1() {
+        return this._fetch(`${BASE_URL}/v1/talking_photo.list`);
+    },
+
+    /**
+     * DISCOVERY: Get Account Assets (V1)
+     */
+    async getAssetsV1() {
+        return this._fetch(`${BASE_URL}/v1/asset.list`);
+    },
+
+    /**
      * Check Request Status (Polling)
      */
     async checkStatus(videoId) {
