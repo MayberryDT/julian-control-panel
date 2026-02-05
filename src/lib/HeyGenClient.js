@@ -77,14 +77,36 @@ export const heyGenClient = {
      * Get list of photo avatar groups
      */
     async getAvatarGroups() {
-        return this._fetch(`${BASE_URL}/v2/avatar_group.list`);
+        console.log('API: Fetching avatar groups...');
+        const result = await this._fetch(`${BASE_URL}/v2/avatar_group.list`);
+        console.log('API: Avatar groups result:', result?.data?.avatar_groups?.length || 0);
+        return result;
     },
 
     /**
      * Get looks in an avatar group
      */
     async getGroupDetails(groupId) {
+        console.log(`API: Fetching group details for ${groupId}...`);
         return this._fetch(`${BASE_URL}/v2/avatar_group/${groupId}/avatars`);
+    },
+
+    /**
+     * Get photo avatars (V2 - filters for talking_photo type)
+     */
+    async getPhotoAvatars() {
+        console.log('API: Fetching photo avatars...');
+        const result = await this._fetch(`${BASE_URL}/v2/avatars?type=talking_photo`);
+        console.log('API: Photo avatars result:', result?.data?.avatars?.length || 0);
+        return result;
+    },
+
+    /**
+     * Get a specific avatar by ID
+     */
+    async getAvatarById(avatarId) {
+        console.log(`API: Fetching avatar by ID: ${avatarId}...`);
+        return this._fetch(`${BASE_URL}/v2/avatar/${avatarId}`);
     },
 
     /**
@@ -140,14 +162,19 @@ export const heyGenClient = {
      * DISCOVERY: Get Talking Photos (V1 Legacy)
      */
     async getTalkingPhotosV1() {
+        console.log('API: Fetching V1 talking photos...');
         return this._fetch(`${BASE_URL}/v1/talking_photo.list`);
     },
 
     /**
-     * DISCOVERY: Get Account Assets (V1)
+     * DISCOVERY: Get User's Photo Avatars (V2)
+     * Uses include_public=false to filter to only user-created
      */
-    async getAssetsV1() {
-        return this._fetch(`${BASE_URL}/v1/asset.list`);
+    async getUserPhotoAvatars() {
+        console.log('API: Fetching user photo avatars only...');
+        const result = await this._fetch(`${BASE_URL}/v2/avatars?include_public=false`);
+        console.log('API: User photo avatars result:', result?.data?.avatars?.length || 0);
+        return result;
     },
 
     /**

@@ -89,106 +89,74 @@ function App() {
     const fetchLibrary = async () => {
         setIsFetchingLibrary(true);
         setShowLibrary(true);
-        setStatusMessage('Syncing with HeyGen Archives...');
 
+        // TARGET GROUP ID (Julian's avatar group)
+        const targetGroupId = '4c38caa16512480abb4536127bd58759';
+        const CACHE_KEY = `julian_avatars_${targetGroupId}`;
+        const CACHE_TTL = 1000 * 60 * 30; // 30 minute cache
+
+        // ⚡ FAST MODE: Check cache first
         try {
-            // TARGET ID (Provided by Julian)
-            const targetId = '4c38caa16512480abb4536127bd58759';
-            console.log('SYNC: Deep Discovery for ID:', targetId);
-
-            // 1. Concurrent Fetch (V2 Avatars + V1 Photos + V1 Assets)
-            setStatusMessage('Deep Scanning Assets (Step 1/3)...');
-            const [v2Data, v1Photos, v1Assets] = await Promise.allSettled([
-                heyGenClient.getAvatars(),
-                heyGenClient.getTalkingPhotosV1(),
-                heyGenClient.getAssetsV1()
-            ]);
-
-            const topAvatars = v2Data.status === 'fulfilled' ? (v2Data.value.data?.avatars || []) : [];
-            const legacyPhotos = v1Photos.status === 'fulfilled' ? (v1Photos.value.data?.talking_photos || []) : [];
-            const assets = v1Assets.status === 'fulfilled' ? (v1Assets.value.data?.assets || []) : [];
-
-            console.log(`Scan Results: V2(${topAvatars.length}) Legacy(${legacyPhotos.length}) Assets(${assets.length})`);
-
-            // 2. Get Avatar Groups
-            setStatusMessage('Syncing Groups (Step 2/3)...');
-            let groups = [];
-            try {
-                const groupsData = await heyGenClient.getAvatarGroups();
-                groups = groupsData.data?.avatar_groups || [];
-            } catch (err) { console.warn('Group skip'); }
-
-            let allLooks = [];
-
-            // 3. Deep Scan each custom group
-            if (groups.length > 0) {
-                setStatusMessage(`Scanning ${groups.length} Folders...`);
-                for (const group of groups) {
-                    const gId = group.avatar_group_id || group.id;
-                    const gName = group.avatar_group_name || group.name || 'Group';
-                    try {
-                        const groupDetails = await heyGenClient.getGroupDetails(gId);
-                        const looks = groupDetails.data?.avatar_looks || groupDetails.data?.avatars || [];
-                        allLooks = [...allLooks, ...looks.map(look => ({
-                            avatar_id: look.avatar_id || look.id,
-                            name: `${gName} - ${look.avatar_look_name || look.name || 'Look'}`,
-                            preview_image_url: look.preview_image_url || look.image_url,
-                        }))];
-                    } catch (err) { }
+            const cached = localStorage.getItem(CACHE_KEY);
+            if (cached) {
+                const { data, timestamp } = JSON.parse(cached);
+                if (Date.now() - timestamp < CACHE_TTL) {
+                    console.log('⚡ CACHE HIT: Loading', data.length, 'avatars instantly');
+                    setLibraryAvatars(data);
+                    setStatusMessage(`Loaded ${data.length} Julian avatars (cached)`);
+                    setIsFetchingLibrary(false);
+                    return;
                 }
             }
+        } catch (e) {
+            console.warn('Cache read failed:', e);
+        }
 
-            // NORMALIZE & MERGE
-            // We search V2, V1, Assets, and deep groups
-            const normalizedGeneral = [
-                ...topAvatars.map(a => ({
-                    avatar_id: a.avatar_id || a.id,
-                    name: a.avatar_name || a.name || 'Avatar',
-                    preview_image_url: a.preview_image_url || a.image_url,
-                    is_stock: !!(a.preview_video_url || a.gender)
-                })),
-                ...legacyPhotos.map(a => ({
-                    avatar_id: a.talking_photo_id || a.id,
-                    name: a.talking_photo_name || a.name || 'Legacy Photo',
-                    preview_image_url: a.preview_image_url || a.image_url,
-                    is_stock: false
-                })),
-                ...assets.filter(a => a.type === 'image').map(a => ({
-                    avatar_id: a.asset_id || a.id,
-                    name: a.name || 'Image Asset',
-                    preview_image_url: a.preview_image_url || a.image_url,
-                    is_stock: false
-                }))
-            ];
+        setStatusMessage('Fetching Julian avatars...');
+        console.log('SYNC: Direct fetch for GROUP:', targetGroupId);
 
-            const combined = [...allLooks, ...normalizedGeneral];
-            const unique = combined.filter((v, i, a) => a.findIndex(t => t.avatar_id === v.avatar_id) === i);
+        try {
+            // ⚡ FAST: Only fetch Julian's group - skip stock avatars
+            const groupLookup = await heyGenClient.getGroupDetails(targetGroupId);
 
-            // Priority Tagging
-            const prioritized = unique.map(a => ({
-                ...a,
-                is_target: a.avatar_id === targetId || a.avatar_id?.includes(targetId) || a.name?.toLowerCase().includes('julian')
+            let julianLooks = [];
+            if (groupLookup?.data?.avatar_list) {
+                julianLooks = groupLookup.data.avatar_list;
+                console.log('✅ JULIAN GROUP FOUND! Looks count:', julianLooks.length);
+            }
+
+            // Normalize Julian's looks
+            const normalizedJulian = julianLooks.map(look => ({
+                avatar_id: look.id,
+                name: look.name || 'Julian Look',
+                preview_image_url: look.image_url,
+                is_stock: false,
+                is_priority: true,
+                is_target: true,
+                group_id: look.group_id
             }));
 
-            // Sort: Targets first, then my stuff (non-stock), then stock
-            prioritized.sort((a, b) => {
-                if (a.is_target && !b.is_target) return -1;
-                if (!a.is_target && b.is_target) return 1;
-                if (a.is_stock && !b.is_stock) return 1;
-                if (!a.is_stock && b.is_stock) return -1;
-                return 0;
-            });
+            // Save to cache
+            try {
+                localStorage.setItem(CACHE_KEY, JSON.stringify({
+                    data: normalizedJulian,
+                    timestamp: Date.now()
+                }));
+                console.log('💾 Cached', normalizedJulian.length, 'avatars');
+            } catch (e) {
+                console.warn('Cache write failed:', e);
+            }
 
-            const limited = prioritized.slice(0, 50);
-            setLibraryAvatars(limited);
-            setStatusMessage(`Sync Success: Found ${limited.length} Assets`);
+            setLibraryAvatars(normalizedJulian);
+            const julianCount = normalizedJulian.length;
+            setStatusMessage(`🎯 ${julianCount} Julian avatars ready!`);
 
-            if (prioritized.some(p => p.is_target)) {
-                console.log('SYNC: Julian Detected in Library!');
+            if (julianCount > 0) {
+                console.log(`🎯 SYNC: ${julianCount} Julian Asset(s) Loaded!`);
             }
 
         } catch (error) {
-            console.error('Handshake failed:', error);
+            console.error('Fetch failed:', error);
             setStatusMessage('Sync Failed. Try Again.');
         } finally {
             setIsFetchingLibrary(false);
@@ -597,11 +565,28 @@ function App() {
                                 libraryAvatars.map((avatar, idx) => (
                                     <div
                                         key={avatar.avatar_id + idx}
-                                        style={styles.avatarCard}
+                                        style={{
+                                            ...styles.avatarCard,
+                                            border: avatar.is_target
+                                                ? '2px solid #38bdf8'
+                                                : '1px solid rgba(255,255,255,0.1)',
+                                            boxShadow: avatar.is_target
+                                                ? '0 0 20px rgba(56, 189, 248, 0.3)'
+                                                : 'none'
+                                        }}
                                         onClick={() => selectFromLibrary(avatar)}
                                     >
                                         <div style={styles.imageContainer}>
                                             <img src={avatar.preview_image_url} alt={avatar.name} style={styles.avatarImage} />
+                                            {avatar.is_target && (
+                                                <div style={styles.priorityBadge}>★ PRIORITY</div>
+                                            )}
+                                        </div>
+                                        <div style={styles.avatarInfo}>
+                                            <div style={styles.avatarName}>{avatar.name}</div>
+                                            <div style={styles.avatarMeta}>
+                                                {avatar.is_target ? 'Julian Asset' : 'Custom'}
+                                            </div>
                                         </div>
                                     </div>
                                 ))
@@ -870,38 +855,53 @@ const styles = {
     },
     avatarGrid: {
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-        gap: '12px',
-        maxHeight: '400px',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+        gap: '16px',
+        maxHeight: '500px',
         overflowY: 'auto',
-        padding: '10px'
+        padding: '16px'
     },
     avatarCard: {
         background: 'rgba(255,255,255,0.05)',
-        borderRadius: '8px',
+        borderRadius: '12px',
         overflow: 'hidden',
         cursor: 'pointer',
         transition: 'all 0.2s',
         border: '1px solid rgba(255,255,255,0.1)',
-        aspectRatio: '2/3',
-        height: '140px'
+        display: 'flex',
+        flexDirection: 'column'
     },
     imageContainer: {
         width: '100%',
-        height: '100%',
-        position: 'relative'
+        height: '120px',
+        position: 'relative',
+        overflow: 'hidden'
     },
     avatarImage: {
         width: '100%',
         height: '100%',
         objectFit: 'cover'
     },
+    priorityBadge: {
+        position: 'absolute',
+        top: '6px',
+        left: '6px',
+        background: 'linear-gradient(135deg, #38bdf8, #0ea5e9)',
+        color: '#000',
+        fontSize: '8px',
+        fontWeight: '800',
+        padding: '3px 6px',
+        borderRadius: '4px',
+        letterSpacing: '0.5px',
+        boxShadow: '0 2px 8px rgba(56, 189, 248, 0.4)'
+    },
     avatarInfo: {
-        padding: '12px',
+        padding: '8px 10px',
+        background: 'rgba(0,0,0,0.4)'
     },
     avatarName: {
-        fontSize: '12px',
-        fontWeight: '700',
+        fontSize: '11px',
+        fontWeight: '600',
         color: '#f8fafc',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
@@ -910,7 +910,7 @@ const styles = {
     avatarMeta: {
         fontSize: '9px',
         color: '#38bdf8',
-        marginTop: '4px',
+        marginTop: '2px',
         textTransform: 'uppercase',
         letterSpacing: '0.5px'
     },
