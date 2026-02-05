@@ -71,16 +71,30 @@ export const heyGenClient = {
      * @param {File} file 
      */
     async uploadAsset(file) {
-        // Fix for "Mime Type Mismatch" error (e.g. image/jpeg != image/png):
-        // Browsers can sometimes misidentify file types. By sending the file 
-        // as an ArrayBuffer and omitting the Content-Type header, we "un-restrict" 
-        // the upload, allowing HeyGen's server to sniff the actual file content 
-        // rather than relying on the browser's deduction.
+        // Hard-fix for "Mime Type Mismatch" error:
+        // By sniffing the file's "Magic Bytes" (the first few bytes), we ensure
+        // the Content-Type header strictly matches what HeyGen's backend detects,
+        // preventing errors caused by browsers misidentifying files based on extensions.
 
         const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer.slice(0, 4));
+
+        let contentType = file.type || 'image/jpeg';
+
+        // Sniff PNG: 89 50 4E 47
+        if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+            contentType = 'image/png';
+        }
+        // Sniff JPEG: FF D8 FF
+        else if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+            contentType = 'image/jpeg';
+        }
 
         return this._fetch(UPLOAD_URL, {
             method: 'POST',
+            headers: {
+                'Content-Type': contentType
+            },
             body: buffer
         });
     },
