@@ -22,18 +22,18 @@ function App() {
     const [voiceId, setVoiceId] = useState('d2499bfa8e0d471d8a623377958f75f0');
     const [voices, setVoices] = useState([]);
     const [isFetchingVoices, setIsFetchingVoices] = useState(false);
-    const [speed, setSpeed] = useState(1.1);
+    const [speed, setSpeed] = useState(1);
     const [motionPrompt, setMotionPrompt] = useState(
         'Man talking on a podcast directly to the viewer holding steady eye contact with the camera.'
     );
     const [isDragActive, setIsDragActive] = useState(false);
-    const [engine, setEngine] = useState('v3');
+    const [engine, setEngine] = useState('v4');
     const [libraryAvatars, setLibraryAvatars] = useState([]);
     const [isFetchingLibrary, setIsFetchingLibrary] = useState(false);
     const [showLibrary, setShowLibrary] = useState(false);
 
     // Audio State
-    const [inputType, setInputType] = useState('text'); // 'text' or 'audio'
+    const [inputType, setInputType] = useState('audio'); // 'text' or 'audio'
     const [audioAssetId, setAudioAssetId] = useState('');
     const [isUploadingAudio, setIsUploadingAudio] = useState(false);
     const [isAudioDragActive, setIsAudioDragActive] = useState(false);
@@ -285,8 +285,11 @@ function App() {
     // Render video
 
     const handleRender = async () => {
-        if (!script || (!imageKey && !assetId)) {
-            alert('Missing Script or Photo.');
+        const hasInput = inputType === 'text' ? script : audioAssetId;
+        const hasPhoto = imageKey || assetId;
+
+        if (!hasInput || !hasPhoto) {
+            alert(`Missing ${!hasInput ? (inputType === 'text' ? 'Script' : 'Audio') : 'Photo'}.`);
             return;
         }
 
