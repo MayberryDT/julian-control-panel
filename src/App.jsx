@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, Loader2, Upload, Video, LogOut, Key } from 'lucide-react';
+import { CheckCircle, Loader2, Upload, Video, LogOut, Key, Music } from 'lucide-react';
 import AuthGate from './components/AuthGate';
 import TransparencyLog from './components/TransparencyLog';
 import { keyVault } from './lib/KeyVault';
@@ -32,6 +32,12 @@ function App() {
     const [isFetchingLibrary, setIsFetchingLibrary] = useState(false);
     const [showLibrary, setShowLibrary] = useState(false);
 
+    // Audio State
+    const [inputType, setInputType] = useState('text'); // 'text' or 'audio'
+    const [audioAssetId, setAudioAssetId] = useState('');
+    const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+    const [isAudioDragActive, setIsAudioDragActive] = useState(false);
+
     // Initial Check
     useEffect(() => {
         const key = keyVault.getKey();
@@ -56,6 +62,8 @@ function App() {
         setLibraryAvatars([]);
         setShowLibrary(false);
         setStatusMessage(null);
+        setAudioAssetId('');
+        setInputType('text');
     };
 
     // Fetch voices
@@ -227,7 +235,55 @@ function App() {
         }
     };
 
+    // Audio Upload Handlers
+    const handleAudioUpload = async (file) => {
+        if (!file) return;
+
+        setIsUploadingAudio(true);
+        setStatusMessage('Uploading Audio Asset...');
+
+        try {
+            const data = await heyGenClient.uploadAsset(file);
+            const id = data.data?.id;
+            setAudioAssetId(id);
+            setStatusMessage('Audio Secured. ID: ' + id);
+        } catch (error) {
+            setStatusMessage('Audio Upload failed. See log.');
+        } finally {
+            setIsUploadingAudio(false);
+        }
+    };
+
+    const onAudioChange = (e) => {
+        const file = e.target.files[0];
+        handleAudioUpload(file);
+    };
+
+    const handleAudioDrag = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === 'dragenter' || e.type === 'dragover') {
+            setIsAudioDragActive(true);
+        } else if (e.type === 'dragleave') {
+            setIsAudioDragActive(false);
+        }
+    };
+
+    const handleAudioDrop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsAudioDragActive(false);
+
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            const droppedFile = e.dataTransfer.files[0];
+            if (droppedFile.size > 0) {
+                handleAudioUpload(droppedFile);
+            }
+        }
+    };
+
     // Render video
+
     const handleRender = async () => {
         if (!script || (!imageKey && !assetId)) {
             alert('Missing Script or Photo.');
@@ -246,8 +302,7 @@ function App() {
                 payload = {
                     image_key: imageKey,
                     video_title: title,
-                    script: script,
-                    voice_id: voiceId,
+                    voice_id: voiceId, // Required even for audio
                     voice_settings: {
                         speed: parseFloat(speed),
                     },
@@ -257,6 +312,12 @@ function App() {
                     custom_motion_prompt: motionPrompt,
                     enhance_custom_motion_prompt: true,
                 };
+
+                if (inputType === 'audio' && audioAssetId) {
+                    payload.audio_asset_id = audioAssetId;
+                } else {
+                    payload.script = script;
+                }
             } else {
                 // Avatar III (V2 Engine) required structure
                 payload = {
@@ -500,26 +561,114 @@ function App() {
                 {/* Right Panel - Script & Render */}
                 <section style={styles.scriptPanel}>
                     <div style={styles.scriptHeader}>
-                        <label style={styles.label}>Sequence Script</label>
-                        <span style={styles.charCount}>{script.length} chars</span>
+                        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                            <label style={styles.label}>Input Source</label>
+                            <div style={styles.toggleGroup}>
+                                <button
+                                    onClick={() => setInputType('text')}
+                                    style={{
+                                        ...styles.toggleBtn,
+                                        backgroundColor: inputType === 'text' ? '#38bdf8' : '#18181b',
+                                        color: inputType === 'text' ? '#000' : '#94a3b8',
+                                        border: inputType === 'text' ? '1px solid #38bdf8' : '1px solid #27272a',
+                                    }}
+                                >
+                                    Text Script
+                                </button>
+                                <button
+                                    onClick={() => setInputType('audio')}
+                                    disabled={engine === 'v3'} // V3 only supports text via this simplified UI
+                                    title={engine === 'v3' ? "Audio upload handled differently in V3" : "Upload Custom Audio"}
+                                    style={{
+                                        ...styles.toggleBtn,
+                                        backgroundColor: inputType === 'audio' ? '#38bdf8' : '#18181b',
+                                        color: inputType === 'audio' ? '#000' : '#94a3b8',
+                                        border: inputType === 'audio' ? '1px solid #38bdf8' : '1px solid #27272a',
+                                        opacity: engine === 'v3' ? 0.5 : 1,
+                                        cursor: engine === 'v3' ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    Audio File
+                                </button>
+                            </div>
+                        </div>
+                        {inputType === 'text' && (
+                            <span style={styles.charCount}>{script.length} chars</span>
+                        )}
                     </div>
-                    <textarea
-                        value={script}
-                        onChange={(e) => setScript(e.target.value)}
-                        placeholder="Enter the generation script..."
-                        style={styles.scriptTextarea}
-                    />
+
+                    {inputType === 'text' ? (
+                        <textarea
+                            value={script}
+                            onChange={(e) => setScript(e.target.value)}
+                            placeholder="Enter the generation script..."
+                            style={styles.scriptTextarea}
+                        />
+                    ) : (
+                        <div
+                            onDragEnter={handleAudioDrag}
+                            onDragLeave={handleAudioDrag}
+                            onDragOver={handleAudioDrag}
+                            onDrop={handleAudioDrop}
+                            style={{ ...styles.dropzoneWrapper, flex: 1, minHeight: '350px' }}
+                        >
+                            <input
+                                type="file"
+                                onChange={onAudioChange}
+                                style={styles.hiddenInput}
+                                id="audio-upload"
+                                accept="audio/mpeg,audio/wav,audio/mp3"
+                            />
+                            <label
+                                htmlFor="audio-upload"
+                                style={{
+                                    ...styles.dropzone,
+                                    height: '100%',
+                                    border: isAudioDragActive
+                                        ? '2px solid #38bdf8'
+                                        : audioAssetId
+                                            ? '2px solid #38bdf8'
+                                            : '2px dashed #27272a',
+                                    backgroundColor: audioAssetId
+                                        ? 'rgba(56, 189, 248, 0.05)'
+                                        : '#111114',
+                                }}
+                            >
+                                {isUploadingAudio ? (
+                                    <Loader2 className="animate-spin" color="#38bdf8" size={32} />
+                                ) : audioAssetId ? (
+                                    <CheckCircle size={32} color="#38bdf8" />
+                                ) : (
+                                    <Music size={32} color="#27272a" />
+                                )}
+                                <div
+                                    style={{
+                                        fontSize: '14px',
+                                        color: audioAssetId ? '#38bdf8' : '#f8fafc',
+                                        marginTop: '15px'
+                                    }}
+                                >
+                                    {audioAssetId ? 'Audio Track Secured' : 'Drop Audio File (MP3/WAV)'}
+                                </div>
+                                {audioAssetId && (
+                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '5px' }}>
+                                        ID: {audioAssetId.slice(0, 12)}...
+                                    </div>
+                                )}
+                            </label>
+                        </div>
+                    )}
 
                     <button
                         onClick={handleRender}
-                        disabled={isLoading || !script || !imageKey}
+                        disabled={isLoading || !imageKey || (inputType === 'text' ? !script : !audioAssetId)}
                         style={{
                             ...styles.renderButton,
                             backgroundColor:
-                                isLoading || !script || !imageKey ? '#1e1e24' : '#38bdf8',
+                                isLoading || !imageKey || (inputType === 'text' ? !script : !audioAssetId) ? '#1e1e24' : '#38bdf8',
                             color: isLoading ? '#52525b' : '#000',
                             cursor:
-                                isLoading || !script || !imageKey ? 'not-allowed' : 'pointer',
+                                isLoading || !imageKey || (inputType === 'text' ? !script : !audioAssetId) ? 'not-allowed' : 'pointer',
                         }}
                     >
                         {isLoading ? (

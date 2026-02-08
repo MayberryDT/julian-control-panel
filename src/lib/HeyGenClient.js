@@ -115,14 +115,13 @@ export const heyGenClient = {
      */
     async uploadAsset(file) {
         // Hard-fix for "Mime Type Mismatch" error:
-        // By sniffing the file's "Magic Bytes" (the first few bytes), we ensure
-        // the Content-Type header strictly matches what HeyGen's backend detects,
-        // preventing errors caused by browsers misidentifying files based on extensions.
+        // By sniffing the file's "Magic Bytes", we ensure the Content-Type header 
+        // strictly matches what HeyGen's backend detects.
 
         const buffer = await file.arrayBuffer();
         const bytes = new Uint8Array(buffer.slice(0, 4));
 
-        let contentType = file.type || 'image/jpeg';
+        let contentType = file.type || 'application/octet-stream';
 
         // Sniff PNG: 89 50 4E 47
         if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
@@ -132,6 +131,20 @@ export const heyGenClient = {
         else if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
             contentType = 'image/jpeg';
         }
+        // Sniff MP3 (ID3): 49 44 33
+        else if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+            contentType = 'audio/mpeg';
+        }
+        // Sniff MP3 (Frame Sync): FF FB
+        else if (bytes[0] === 0xFF && bytes[1] === 0xFB) {
+            contentType = 'audio/mpeg';
+        }
+        // Sniff WAV (RIFF): 52 49 46 46
+        else if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+            contentType = 'audio/wav';
+        }
+
+        console.log(`Upload: Detected ${contentType} for ${file.name}`);
 
         return this._fetch(UPLOAD_URL, {
             method: 'POST',
