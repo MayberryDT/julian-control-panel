@@ -1,36 +1,37 @@
-# Julian Control Panel v2 (Secure Client)
+# Julian Control Panel
 
-A secure, client-side-only interface for generating HeyGen videos.
+A browser-based control panel for generating HeyGen avatar videos through a direct client-side workflow.
 
-## Security Model (Zero-Knowledge)
+## Why It Exists
 
-This application has been refactored to ensure **Local Sovereignty**:
+Julian began as an experiment in AI media production: how quickly can a small operator move from scripts and persona ideas to repeatable avatar-video generation without building a heavy backend first?
 
-- **No Backend**: All API calls originate directly from your browser to `api.heygen.com`.
-- **Key Storage**: Your API Key is stored only in browser memory (or encrypted in LocalStorage if "Remember Me" is enabled).
-- **Transparency**: The bottom of the screen features a live "Transparency Log" showing exactly what network requests are being made in real-time.
+The project is useful as a proof point for Tyler's AI-tooling experience: working with API-driven media generation, designing a focused operator interface, and thinking through the privacy/security boundaries around third-party AI services.
 
-## Usage
+## What It Shows
 
-1. **Enter Key**: Paste your HeyGen API Key (Enterprise/Trial) into the gate.
-2. **Verify**: Watch the Transparency Log confirm your key functionality.
-3. **Generate**: Drag & drop your avatar photo and enter your script.
+- Practical use of the HeyGen API and avatar-video workflows.
+- Client-side interface design for an AI media operator.
+- Drag-and-drop input flow for avatar/source assets.
+- Transparent request logging so the user can see what the tool is doing.
+- Security-minded handling of API keys without storing them on a server.
+
+## Security Model
+
+The app was designed around local sovereignty:
+
+- No custom backend is required for the primary workflow.
+- API calls originate from the browser to HeyGen.
+- API keys are entered by the user and are not committed to the repo.
+- Netlify headers / Content Security Policy are used for deployment hardening.
+
+## Status
+
+Portfolio / prototype artifact. It demonstrates AI media workflow design and API integration more than commercial traction.
 
 ## Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Start local dev server
 npm run dev
-```
-
-## Deployment (Netlify)
-
-This project requires **Netlify Headers** for security hardening. The `netlify.toml` file includes a strict Content Security Policy (CSP) that blocks all connections except to HeyGen.
-
-```toml
-# CSP Example
-Content-Security-Policy = "default-src 'self'; connect-src 'self' https://api.heygen.com ..."
 ```
